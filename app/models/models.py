@@ -27,6 +27,8 @@ class Group(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
     title = Column(String(255), nullable=True)
+    custom_title = Column(String(255), nullable=True)
+    group_link = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -140,6 +142,18 @@ class Conversation(Base):
 
     def __repr__(self):
         return f"<Conversation(id={self.id}, answered={self.is_answered})>"
+
+
+class PredefinedOperator(Base):
+    """Oldindan belgilangan operatorlar (username orqali)"""
+    __tablename__ = "predefined_operators"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(255), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<PredefinedOperator(username={self.username})>"
 
 
 class AdminUser(Base):

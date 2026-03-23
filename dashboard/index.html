@@ -33,9 +33,6 @@
                     <button class="nav-item active" data-view="overview">
                         <span class="icon">📊</span> Overview
                     </button>
-                    <button class="nav-item" data-view="operators">
-                        <span class="icon">👨‍💼</span> Operatorlar
-                    </button>
                     <button class="nav-item" data-view="users">
                         <span class="icon">👥</span> Foydalanuvchilar
                     </button>
@@ -62,10 +59,8 @@
                 </div>
                 <div class="header-right">
                     <div class="filter-bar">
-                        <div class="group-filter">
-                            <select id="groupSelect" class="filter-select">
-                                <option value="">Barcha guruhlar</option>
-                            </select>
+                        <div class="group-filter" id="groupIcons">
+                            <!-- Guruh iconlari dinamik yuklanadi -->
                         </div>
                         <button class="filter-btn" data-period="today">Bugun</button>
                         <button class="filter-btn" data-period="yesterday">Kecha</button>
@@ -99,6 +94,37 @@
             <div class="modal-body">
                 <div class="modal-loading hidden" id="chatModalLoading">Yuklanmoqda...</div>
                 <div class="chat-list" id="chatModalContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Group Settings Modal -->
+    <div id="groupSettingsModal" class="modal">
+        <div class="modal-content settings-modal">
+            <div class="modal-header">
+                <h3>Guruh sozlamalari</h3>
+                <span class="close-modal" id="closeSettingsModal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="groupSettingsForm">
+                    <input type="hidden" id="editGroupId">
+                    <div class="form-group">
+                        <label>Asl nomi (Telegramdan):</label>
+                        <p id="originalGroupTitle" class="readonly-text"></p>
+                    </div>
+                    <div class="form-group">
+                        <label for="customGroupTitle">Ko'rsatiladigan nom:</label>
+                        <input type="text" id="customGroupTitle" placeholder="Masalan: Bugalteriya">
+                    </div>
+                    <div class="form-group">
+                        <label for="groupLink">Guruh linki (ixtiyoriy):</label>
+                        <input type="text" id="groupLink" placeholder="https://t.me/...">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" id="cancelSettings">Bekor qilish</button>
+                        <button type="submit" class="btn btn-primary">Saqlash</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

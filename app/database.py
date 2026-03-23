@@ -65,3 +65,19 @@ async def create_tables():
             await conn.execute(text("ALTER TABLE conversations ADD COLUMN response_time_seconds DOUBLE PRECISION"))
         except Exception:
             pass  # Already exists
+
+        # Group table migrations
+        try:
+            await conn.execute(text("ALTER TABLE groups ADD COLUMN custom_title VARCHAR(255)"))
+        except Exception:
+            pass
+
+        try:
+            await conn.execute(text("ALTER TABLE groups ADD COLUMN group_link VARCHAR(255)"))
+        except Exception:
+            pass
+
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN is_operator BOOLEAN DEFAULT FALSE"))
+        except Exception:
+            pass

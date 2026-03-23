@@ -39,6 +39,27 @@ async def get_groups(
     return await service.get_groups()
 
 
+from pydantic import BaseModel
+
+class GroupUpdate(BaseModel):
+    custom_title: Optional[str] = None
+    group_link: Optional[str] = None
+
+@router.put("/groups/{group_id}")
+async def update_group(
+    group_id: int,
+    data: GroupUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Guruh ma'lumotlarini yangilash"""
+    service = AnalyticsService(db)
+    group = await service.update_group(group_id, data.custom_title, data.group_link)
+    if not group:
+        raise HTTPException(status_code=404, detail="Guruh topilmadi")
+    return group
+
+
 # =====================================================
 # OVERVIEW ENDPOINTS
 # =====================================================
@@ -261,3 +282,51 @@ async def get_conversations(
     slow = await service.get_slow_responses(parse_date(date_from), parse_date(date_to), group_id=group_id)
     recent = await service.get_recent_messages(parse_date(date_from), parse_date(date_to), group_id=group_id)
     return {"slow_responses": slow, "recent_messages": recent}
+
+
+# =====================================================
+# OPERATOR MANAGEMENT
+# =====================================================
+
+class OperatorAdd(BaseModel):
+    username: str
+
+@router.get("/operators")
+async def get_operators(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Barcha operatorlar ro'yxati"""
+    service = AnalyticsService(db)
+    return await service.get_all_operators(
+        date_from=parse_date(date_from),
+        date_to=parse_date(date_to),
+        group_id=group_id
+    )
+
+@router.post("/operators")
+async def add_operator(
+    data: OperatorAdd,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Yangi operator qo'shish"""
+    service = AnalyticsService(db)
+    try:
+        return await service.add_predefined_operator(data.username)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/operators/{op_id}")
+async def remove_operator(
+    op_id: int,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Operatorni o'chirish"""
+    service = AnalyticsService(db)
+    await service.remove_predefined_operator(op_id)
+    return {"status": "success"}

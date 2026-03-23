@@ -13,15 +13,15 @@ const App = {
     groups: [],
 
     /** Ilovani boshlash */
-    init() {
+    async init() {
         if (!Auth.requireAuth()) return;
 
         Charts.setDefaults();
-        this.bindEvents();
         this.loadTheme();
-        this.loadGroups().then(() => {
-            this.navigate('overview');
-        });
+        await this.loadGroups();
+
+        if (this.currentView) this.navigate(this.currentView);
+        this.bindEvents();
     },
 
     /** Hodisalarni bog'lash */
@@ -30,6 +30,11 @@ const App = {
         document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
             btn.addEventListener('click', () => {
                 this.navigate(btn.dataset.view);
+                // Mobile
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('sidebarOverlay');
+                if (sidebar) sidebar.classList.remove('open');
+                if (overlay) overlay.classList.remove('show');
             });
         });
 
@@ -40,14 +45,7 @@ const App = {
             });
         });
 
-        // Group filter
-        const groupSelect = document.getElementById('groupSelect');
-        if (groupSelect) {
-            groupSelect.addEventListener('change', (e) => {
-                this.currentGroupId = e.target.value;
-                this.renderView();
-            });
-        }
+        // Group filter click listener is handled in renderGroupIcons
 
         // Custom date
         const dateFromInput = document.getElementById('dateFrom');
@@ -82,6 +80,14 @@ const App = {
                 if (e.target === chatModal) this.closeChatModal();
             });
         }
+
+        // Group Settings Modal
+        document.getElementById('closeSettingsModal')?.addEventListener('click', () => this.closeSettingsModal());
+        document.getElementById('cancelSettings')?.addEventListener('click', () => this.closeSettingsModal());
+        document.getElementById('groupSettingsForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveGroupSettings();
+        });
 
         // Mobile menu
         const menuToggle = document.getElementById('menuToggle');
@@ -218,46 +224,115 @@ const App = {
             const data = await Auth.fetch('/api/stats/groups');
             if (data) {
                 this.groups = data;
-                this.renderGroupSelect();
+                this.renderGroupIcons();
             }
         } catch (e) {
             console.error("Gruppalarni yuklashda xato:", e);
         }
     },
 
-    renderGroupSelect() {
-        const select = document.getElementById('groupSelect');
-        if (!select) return;
+    renderGroupIcons() {
+        const container = document.getElementById('groupIcons');
+        if (!container) return;
 
-        let html = '<option value="">Barcha guruhlar</option>';
+        let html = `
+            <div class="group-item ${!this.currentGroupId ? 'active' : ''}" data-id="">
+                <span>Barchasi</span>
+            </div>
+        `;
+
         this.groups.forEach(g => {
-            html += `<option value="${g.id}">${this.escapeHtml(g.title || 'Nomsiz guruh')}</option>`;
+            const title = g.custom_title || g.title || 'Unknown';
+            const initial = title.charAt(0).toUpperCase();
+            html += `
+                <div class="group-item ${this.currentGroupId == g.id ? 'active' : ''}" data-id="${g.id}">
+                    <div class="group-initial">${initial}</div>
+                    <span>${this.escapeHtml(title)}</span>
+                </div>
+            `;
         });
-        select.innerHTML = html;
-        select.value = this.currentGroupId;
+
+        if (this.currentGroupId) {
+            html += `
+                <div class="group-settings-btn" id="openSettingsBtn" title="Sozlamalar">
+                    ⚙️
+                </div>
+            `;
+        }
+
+        container.innerHTML = html;
+
+        // Group click
+        container.querySelectorAll('.group-item').forEach(item => {
+            item.addEventListener('click', () => {
+                this.currentGroupId = item.dataset.id || '';
+                this.renderGroupIcons();
+                this.renderView();
+            });
+        });
+
+        // Settings button
+        const settingsBtn = document.getElementById('openSettingsBtn');
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.openGroupSettings(this.currentGroupId);
+            });
+        }
+    },
+
+    openGroupSettings(groupId) {
+        const group = this.groups.find(g => g.id == groupId);
+        if (!group) return;
+
+        document.getElementById('editGroupId').value = group.id;
+        document.getElementById('originalGroupTitle').textContent = group.title;
+        document.getElementById('customGroupTitle').value = group.custom_title || '';
+        document.getElementById('groupLink').value = group.group_link || '';
+
+        document.getElementById('groupSettingsModal').style.display = 'flex';
+    },
+
+    closeSettingsModal() {
+        const modal = document.getElementById('groupSettingsModal');
+        if (modal) modal.style.display = 'none';
+    },
+
+    async saveGroupSettings() {
+        const id = document.getElementById('editGroupId').value;
+        const custom_title = document.getElementById('customGroupTitle').value;
+        const group_link = document.getElementById('groupLink').value;
+
+        try {
+            const data = await Auth.fetch(`/api/stats/groups/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ custom_title, group_link })
+            });
+
+            if (data) {
+                await this.loadGroups();
+                this.closeSettingsModal();
+                this.renderView();
+            }
+        } catch (error) {
+            console.error('Error saving group settings:', error);
+            alert('Xatolik yuz berdi');
+        }
     },
 
     /** ===== OVERVIEW PAGE ===== */
     async renderOverview(container) {
         const q = this.getQueryParams();
-
-        // Barcha ma'lumotlarni parallel yuklash
-        const [overview, messages, responseTime, operators, heatmap, userGrowth, conversations, unanswered, users] = await Promise.all([
+        const [overview, messages, unanswered, answered] = await Promise.all([
             Auth.fetch(`/api/stats/overview${q}`),
-            Auth.fetch(`/api/stats/messages${q}`),
-            Auth.fetch(`/api/stats/response-time${q}`),
-            Auth.fetch(`/api/stats/operators${q}`),
-            Auth.fetch(`/api/stats/heatmap${q}`),
-            Auth.fetch(`/api/stats/user-growth${q}`),
-            Auth.fetch(`/api/stats/conversations${q}`),
+            Auth.fetch(`/api/stats/daily-messages${q}`),
             Auth.fetch(`/api/stats/unanswered${q}`),
-            Auth.fetch(`/api/stats/users${q}`),
+            Auth.fetch(`/api/stats/conversations${q}`) // This includes answered messages
         ]);
 
         if (!overview) return;
 
         container.innerHTML = `
-            <!-- Stat Cards -->
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon blue">📨</div>
@@ -266,76 +341,46 @@ const App = {
                 </div>
                 <div class="stat-card">
                     <div class="stat-icon green">👥</div>
-                    <div class="stat-label">Unique foydalanuvchilar</div>
+                    <div class="stat-label">Foydalanuvchilar</div>
                     <div class="stat-value">${this.formatNumber(overview.unique_users)}</div>
-                </div>
-                <div class="stat-card clickable-card" onclick="App.openChatModal('answered')">
-                    <div class="stat-icon purple">✅</div>
-                    <div class="stat-label">Javob berilgan (Javob darajasi)</div>
-                    <div class="stat-value">${overview.response_rate}%</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-icon yellow">⏱</div>
-                    <div class="stat-label">O'rtacha javob vaqti</div>
+                    <div class="stat-label">Javob vaqti (o'rtacha)</div>
                     <div class="stat-value">${this.formatTime(overview.avg_response_time)}</div>
-                </div>
-                <div class="stat-card clickable-card" onclick="App.openChatModal('unanswered')">
-                    <div class="stat-icon red">❌</div>
-                    <div class="stat-label">Javobsiz userlar</div>
-                    <div class="stat-value">${this.formatNumber(overview.unanswered_users)}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon blue">👨‍💼</div>
-                    <div class="stat-label">Faol operatorlar</div>
-                    <div class="stat-value">${overview.active_operators}</div>
                 </div>
             </div>
 
-            <!-- Charts Row 1 -->
-            <div class="charts-grid">
+            <!-- Main State Units -->
+            <div class="tables-grid" style="grid-template-columns: 1fr 1fr; margin-top:24px; gap:24px">
+                <!-- Unit 1: Unanswered -->
+                <div class="table-card" style="border-top: 4px solid var(--danger); min-height:400px">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+                        <h2 style="margin:0"><span class="icon" style="background:var(--danger-soft); color:var(--danger); padding:8px; border-radius:12px; margin-right:8px">❌</span> Javob berilmaganlar</h2>
+                        <div class="badge danger" style="font-size:1.2rem; padding:8px 16px">${this.formatNumber(overview.unanswered_users)}</div>
+                    </div>
+                    ${this.renderUnansweredTable(unanswered?.unanswered || [])}
+                </div>
+
+                <!-- Unit 2: Answered -->
+                <div class="table-card" style="border-top: 4px solid var(--success); min-height:400px">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+                        <h2 style="margin:0"><span class="icon" style="background:var(--success-soft); color:var(--success); padding:8px; border-radius:12px; margin-right:8px">✅</span> Javob berilganlar</h2>
+                        <div class="badge success" style="font-size:1.2rem; padding:8px 16px">${overview.response_rate}%</div>
+                    </div>
+                    ${this.renderRecentMessagesTable((answered?.recent_messages || []).filter(m => m.is_answered))}
+                </div>
+            </div>
+
+            <!-- Charts & Recent Activity -->
+            <div class="charts-grid" style="margin-top:24px">
                 <div class="chart-card">
                     <h3><span class="icon">📈</span> Kunlik xabarlar</h3>
                     <div class="chart-container"><canvas id="dailyMessagesChart"></canvas></div>
                 </div>
-                <div class="chart-card">
-                    <h3><span class="icon">⏱</span> Javob vaqti trendi</h3>
-                    <div class="chart-container"><canvas id="responseTimeChart"></canvas></div>
-                </div>
-                <div class="chart-card">
-                    <h3><span class="icon">👨‍💼</span> Operator samaradorligi</h3>
-                    <div class="chart-container"><canvas id="operatorChart"></canvas></div>
-                </div>
-                <div class="chart-card">
-                    <h3><span class="icon">👥</span> Foydalanuvchilar o'sishi</h3>
-                    <div class="chart-container"><canvas id="userGrowthChart"></canvas></div>
-                </div>
                 <div class="chart-card full-width">
-                    <h3><span class="icon">🔥</span> Faollik heatmapi (soatlar bo'yicha)</h3>
-                    <div id="heatmapContainer"></div>
-                </div>
-            </div>
-
-            <!-- Tables -->
-            <div class="tables-grid">
-                <div class="table-card">
-                    <h3><span class="icon">🏆</span> Eng faol foydalanuvchilar</h3>
-                    ${this.renderUsersTable(users?.users || [])}
-                </div>
-                <div class="table-card">
-                    <h3><span class="icon">👨‍💼</span> Eng yaxshi operatorlar</h3>
-                    ${this.renderOperatorsTable(operators?.operators || [])}
-                </div>
-                <div class="table-card">
-                    <h3><span class="icon">❌</span> Javobsiz suhbatlar</h3>
-                    ${this.renderUnansweredTable(unanswered?.unanswered || [])}
-                </div>
-                <div class="table-card">
-                    <h3><span class="icon">🐢</span> Sekin javoblar</h3>
-                    ${this.renderSlowResponsesTable(conversations?.slow_responses || [])}
-                </div>
-                <div class="table-card full-width">
-                    <h3><span class="icon">💬</span> So'nggi xabarlar</h3>
-                    ${this.renderRecentMessagesTable(conversations?.recent_messages || [])}
+                    <h3><span class="icon">💬</span> Barcha so'nggi xabarlar</h3>
+                    ${this.renderRecentMessagesTable(answered?.recent_messages || [])}
                 </div>
             </div>
         `;
@@ -343,157 +388,21 @@ const App = {
         // Chartlarni chizish
         setTimeout(() => {
             Charts.createDailyMessages('dailyMessagesChart', messages?.daily_messages || []);
-            Charts.createResponseTimeTrend('responseTimeChart', responseTime?.response_time_trend || []);
-            Charts.createOperatorPerformance('operatorChart', operators?.operators || []);
-            Charts.createUserGrowth('userGrowthChart', userGrowth?.user_growth || []);
-            Charts.createHeatmap('heatmapContainer', heatmap?.heatmap || []);
         }, 100);
     },
 
-    /** ===== OPERATORS PAGE ===== */
-    async renderOperators(container) {
-        const q = this.getQueryParams();
-        const data = await Auth.fetch(`/api/stats/operators${q}`);
-        if (!data) return;
 
-        const operators = data.operators || [];
-
-        container.innerHTML = `
-            <div class="stats-grid" style="margin-bottom:24px">
-                <div class="stat-card">
-                    <div class="stat-icon blue">👨‍💼</div>
-                    <div class="stat-label">Jami operatorlar</div>
-                    <div class="stat-value">${operators.length}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon green">💬</div>
-                    <div class="stat-label">Jami javoblar</div>
-                    <div class="stat-value">${this.formatNumber(operators.reduce((s, o) => s + o.total_replies, 0))}</div>
-                </div>
-            </div>
-            <div class="table-card full-width">
-                <h3><span class="icon">🏆</span> Operatorlar reytingi</h3>
-                <div style="overflow-x:auto">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Rank</th>
-                                <th>Operator</th>
-                                <th>Javoblar</th>
-                                <th>O'rtacha vaqt</th>
-                                <th>Javob berilgan userlar</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${operators.map((op, i) => `
-                                <tr>
-                                    <td>${i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td>
-                                    <td>
-                                        <div class="user-name">
-                                            <div class="avatar">${(op.name || '?')[0].toUpperCase()}</div>
-                                            ${op.name}${op.username ? ` <span style="color:var(--text-muted)">@${op.username}</span>` : ''}
-                                        </div>
-                                    </td>
-                                    <td><strong>${op.total_replies}</strong></td>
-                                    <td>${this.formatTime(op.avg_response_time)}</td>
-                                    <td>${op.answered_users}</td>
-                                    <td><button class="filter-btn" onclick="App.navigate('operator-detail', {id:${op.id}})">Batafsil →</button></td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                ${operators.length === 0 ? '<div class="empty-state"><div class="icon">👨‍💼</div><p>Hozircha operator ma\'lumotlari yo\'q</p></div>' : ''}
-            </div>
-        `;
-    },
-
+    /** ===== USERS PAGE ===== */
     /** ===== USERS PAGE ===== */
     async renderUsers(container) {
         const q = this.getQueryParams();
         const data = await Auth.fetch(`/api/stats/users${q}`);
         if (!data) return;
 
-        const users = data.users || [];
-
         container.innerHTML = `
             <div class="table-card full-width">
-                <h3><span class="icon">👥</span> Foydalanuvchilar ro'yxati</h3>
-                <div style="overflow-x:auto">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Foydalanuvchi</th>
-                                <th>Xabarlar</th>
-                                <th>Birinchi ko'rinish</th>
-                                <th>Oxirgi ko'rinish</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${users.map((user, i) => `
-                                <tr>
-                                    <td>${i + 1}</td>
-                                    <td>
-                                        <div class="user-name">
-                                            <div class="avatar">${(user.name || '?')[0].toUpperCase()}</div>
-                                            ${user.name}${user.username ? ` <span style="color:var(--text-muted)">@${user.username}</span>` : ''}
-                                        </div>
-                                    </td>
-                                    <td><strong>${user.message_count}</strong></td>
-                                    <td>${user.first_seen ? this.formatDate(user.first_seen) : '-'}</td>
-                                    <td>${user.last_seen ? this.formatDate(user.last_seen) : '-'}</td>
-                                    <td><button class="filter-btn" onclick="App.navigate('user-detail', {id:${user.id}})">Batafsil →</button></td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                ${users.length === 0 ? '<div class="empty-state"><div class="icon">👥</div><p>Hozircha foydalanuvchi ma\'lumotlari yo\'q</p></div>' : ''}
-            </div>
-        `;
-    },
-
-    /** ===== OPERATOR DETAIL PAGE ===== */
-    async renderOperatorDetail(container) {
-        const data = await Auth.fetch(`/api/stats/operators/${this.params.id}`);
-        if (!data) {
-            container.innerHTML = '<div class="empty-state"><div class="icon">❌</div><p>Operator topilmadi</p></div>';
-            return;
-        }
-
-        container.innerHTML = `
-            <button class="back-btn" onclick="App.navigate('operators')">← Orqaga</button>
-            <div class="detail-header">
-                <div class="detail-avatar">${(data.name || '?')[0].toUpperCase()}</div>
-                <div class="detail-info">
-                    <h2>${data.name}</h2>
-                    <p>${data.username ? '@' + data.username : 'Username yo\'q'} · Telegram ID: ${data.telegram_id}</p>
-                </div>
-            </div>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-icon blue">💬</div>
-                    <div class="stat-label">Jami javoblar</div>
-                    <div class="stat-value">${data.total_replies}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon yellow">⏱</div>
-                    <div class="stat-label">O'rtacha javob vaqti</div>
-                    <div class="stat-value">${this.formatTime(data.avg_response_time)}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon green">👥</div>
-                    <div class="stat-label">Javob berilgan userlar</div>
-                    <div class="stat-value">${data.answered_users}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon red">❌</div>
-                    <div class="stat-label">Javobsiz suhbatlar</div>
-                    <div class="stat-value">${data.unanswered_chats}</div>
-                </div>
+                <h3><span class="icon">👥</span> Barcha foydalanuvchilar</h3>
+                ${this.renderUsersTable(data.users || [])}
             </div>
         `;
     },
@@ -542,16 +451,6 @@ const App = {
                         </span>
                     </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon purple">📊</div>
-                    <div class="stat-label">Suhbatlar</div>
-                    <div class="stat-value">${data.answered_conversations}/${data.total_conversations}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon blue">👨‍💼</div>
-                    <div class="stat-label">Operator</div>
-                    <div class="stat-value" style="font-size:16px">${data.operator ? data.operator.name : 'Tayinlanmagan'}</div>
-                </div>
             </div>
         `;
     },
@@ -561,30 +460,30 @@ const App = {
     renderUsersTable(users) {
         if (!users.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
         return `
-            <div style="overflow-x:auto">
-            <table class="data-table">
-                <thead><tr><th>#</th><th>Ism</th><th>Xabarlar</th></tr></thead>
-                <tbody>
-                    ${users.slice(0, 10).map((u, i) => `
+    < div style = "overflow-x:auto" >
+        <table class="data-table">
+            <thead><tr><th>#</th><th>Ism</th><th>Xabarlar</th></tr></thead>
+            <tbody>
+                ${users.slice(0, 10).map((u, i) => `
                         <tr style="cursor:pointer" onclick="App.navigate('user-detail',{id:${u.id}})">
                             <td>${i + 1}</td>
                             <td><div class="user-name"><div class="avatar">${(u.name || '?')[0].toUpperCase()}</div>${u.name}</div></td>
                             <td><strong>${u.message_count}</strong></td>
                         </tr>
                     `).join('')}
-                </tbody>
-            </table></div>
-        `;
+            </tbody>
+        </table></div >
+            `;
     },
 
     renderOperatorsTable(operators) {
         if (!operators.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
         return `
-            <div style="overflow-x:auto">
-            <table class="data-table">
-                <thead><tr><th>#</th><th>Operator</th><th>Javoblar</th><th>Vaqt</th></tr></thead>
-                <tbody>
-                    ${operators.slice(0, 10).map((op, i) => `
+            < div style = "overflow-x:auto" >
+                <table class="data-table">
+                    <thead><tr><th>#</th><th>Operator</th><th>Javoblar</th><th>Vaqt</th></tr></thead>
+                    <tbody>
+                        ${operators.slice(0, 10).map((op, i) => `
                         <tr style="cursor:pointer" onclick="App.navigate('operator-detail',{id:${op.id}})">
                             <td>${i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td>
                             <td><div class="user-name"><div class="avatar">${(op.name || '?')[0].toUpperCase()}</div>${op.name}</div></td>
@@ -592,46 +491,53 @@ const App = {
                             <td>${this.formatTime(op.avg_response_time)}</td>
                         </tr>
                     `).join('')}
-                </tbody>
-            </table></div>
-        `;
+                    </tbody>
+                </table></div >
+                    `;
+    },
+
+    formatTime(seconds) {
+        if (!seconds || seconds === 0) return '0s';
+        if (seconds > 86400) return Math.round(seconds / 86400) + ' kun';
+        if (seconds > 3600) return (seconds / 3600).toFixed(1) + ' soat';
+        if (seconds > 60) return Math.round(seconds / 60) + ' daq';
+        return Math.round(seconds) + 's';
+    },
+
+    formatDate(isoStr) {
+        if (!isoStr) return '-';
+        const d = new Date(isoStr);
+        return d.toLocaleDateString('uz-UZ', { day: '2-digit', month: '2-digit', year: 'numeric' })
+            + ' ' + d.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
+    },
+
+    escapeHtml(str) {
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+        return (str || '').replace(/[&<>"']/g, c => map[c]);
     },
 
     renderUnansweredTable(items) {
         if (!items.length) return '<div class="empty-state"><p>✅ Barcha xabarlarga javob berilgan</p></div>';
         return `
             <div style="overflow-x:auto">
-            <table class="data-table">
-                <thead><tr><th>Foydalanuvchi</th><th>Kutish vaqti</th><th>Sana</th></tr></thead>
-                <tbody>
-                    ${items.slice(0, 10).map(item => `
-                        <tr>
-                            <td><div class="user-name"><div class="avatar">${(item.name || '?')[0].toUpperCase()}</div>${item.username ? '@' + item.username : item.name}</div></td>
-                            <td><span class="badge danger">${this.formatTime(item.waiting_time)}</span></td>
-                            <td>${this.formatDate(item.created_at)}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table></div>
-        `;
-    },
-
-    renderSlowResponsesTable(items) {
-        if (!items.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
-        return `
-            <div style="overflow-x:auto">
-            <table class="data-table">
-                <thead><tr><th>Foydalanuvchi</th><th>Javob vaqti</th><th>Sana</th></tr></thead>
-                <tbody>
-                    ${items.slice(0, 10).map(item => `
-                        <tr>
-                            <td><div class="user-name"><div class="avatar">${(item.name || '?')[0].toUpperCase()}</div>${item.username ? '@' + item.username : item.name}</div></td>
-                            <td><span class="badge warning">${this.formatTime(item.response_time)}</span></td>
-                            <td>${this.formatDate(item.created_at)}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table></div>
+                <table class="data-table">
+                    <thead><tr><th>Foydalanuvchi</th><th>Kutish</th><th>Sana</th></tr></thead>
+                    <tbody>
+                        ${items.slice(0, 10).map(item => `
+                            <tr>
+                                <td>
+                                    <div class="user-name">
+                                        <div class="avatar">${(item.name || '?')[0].toUpperCase()}</div>
+                                        ${this.escapeHtml(item.username ? '@' + item.username : item.name)}
+                                    </div>
+                                </td>
+                                <td><span class="badge danger">${this.formatTime(item.waiting_time)}</span></td>
+                                <td style="font-size:12px">${this.formatDate(item.created_at)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
         `;
     },
 
@@ -639,21 +545,61 @@ const App = {
         if (!messages.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
         return `
             <div style="overflow-x:auto">
-            <table class="data-table">
-                <thead><tr><th>Foydalanuvchi</th><th>Xabar</th><th>Turi</th><th>Vaqt</th></tr></thead>
-                <tbody>
-                    ${messages.slice(0, 20).map(msg => `
-                        <tr>
-                            <td><div class="user-name"><div class="avatar">${(msg.name || '?')[0].toUpperCase()}</div>${msg.username ? '@' + msg.username : msg.name}</div></td>
-                            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.escapeHtml(msg.text || '(media)')}</td>
-                            <td>${msg.is_from_operator ? '<span class="badge info">Operator</span>' : msg.is_reply ? '<span class="badge success">Javob</span>' : '<span class="badge">User</span>'}</td>
-                            <td style="white-space:nowrap">${this.formatDate(msg.date)}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table></div>
+                <table class="data-table">
+                    <thead><tr><th>Foydalanuvchi</th><th>Xabar</th><th>Vaqt</th></tr></thead>
+                    <tbody>
+                        ${messages.slice(0, 20).map(msg => `
+                            <tr>
+                                <td>
+                                    <div class="user-name">
+                                        <div class="avatar" style="${msg.is_from_operator ? 'background:var(--success-soft);color:var(--success)' : ''}">
+                                            ${(msg.name || '?')[0].toUpperCase()}
+                                        </div>
+                                        ${this.escapeHtml(msg.username ? '@' + msg.username : msg.name)}
+                                    </div>
+                                </td>
+                                <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                                    ${msg.is_from_operator ? '<span class="badge success" style="margin-right:4px">Javob</span>' : ''}
+                                    ${this.escapeHtml(msg.text || '(media)')}
+                                </td>
+                                <td style="font-size:11px;white-space:nowrap">${this.formatDate(msg.date)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
         `;
     },
+
+    renderUsersTable(users) {
+        if (!users.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
+        return `
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead><tr><th>#</th><th>Foydalanuvchi</th><th>Xabarlar</th><th>Amal</th></tr></thead>
+                    <tbody>
+                        ${users.slice(0, 50).map((u, i) => `
+                            <tr>
+                                <td>${i + 1}</td>
+                                <td>
+                                    <div class="user-name">
+                                        <div class="avatar">${(u.name || '?')[0].toUpperCase()}</div>
+                                        <div>
+                                            <div style="font-weight:600">${this.escapeHtml(u.name)}</div>
+                                            <div style="font-size:11px;color:var(--text-muted)">${u.username ? '@' + u.username : ''}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td><strong>${u.message_count}</strong></td>
+                                <td><button class="filter-btn" onclick="App.navigate('user-detail',{id:${u.id}})">Batafsil</button></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    },
+
     /** ===== CHAT MODAL LOGIC ===== */
     async openChatModal(type) {
         const modal = document.getElementById('chatModal');
@@ -681,26 +627,15 @@ const App = {
             content.innerHTML = list.map(chat => `
                 <div class="chat-item">
                     <div class="chat-header">
-                        <div class="chat-user">${chat.name} ${chat.username ? `<span style="color:var(--text-muted);font-weight:400">@${chat.username}</span>` : ''}</div>
+                        <div class="chat-user">${this.escapeHtml(chat.name)} ${chat.username ? `<span style="color:var(--text-muted);font-weight:400">@${chat.username}</span>` : ''}</div>
                         <div class="chat-time">${this.formatDate(chat.created_at)}</div>
                     </div>
-                    ${chat.group_title ? `<div class="chat-group-badge">Guruh: ${chat.group_title}</div>` : ''}
+                    ${chat.group_title ? `<div class="chat-group-badge">Guruh: ${this.escapeHtml(chat.group_title)}</div>` : ''}
                     <div class="chat-text">
                         ${this.escapeHtml(chat.message_text ? `"${chat.message_text}"` : '(Xabar matni yo\'q)')}
                     </div>
-                    ${type === 'answered' ? `
-                    <div style="font-size:12px;color:var(--success);margin-bottom:8px">
-                        Javob berilgan (Kutish: ${this.formatTime(chat.response_time)})
-                    </div>
-                    ` : `
-                    <div style="font-size:12px;color:var(--danger);margin-bottom:8px">
-                        Kutmoqda: ${this.formatTime(chat.waiting_time)}
-                    </div>
-                    `}
-                    <div class="chat-actions">
-                        ${chat.group_telegram_id && chat.message_id ?
-                    `<a href="https://t.me/c/${chat.group_telegram_id}/${chat.message_id}" target="_blank" class="chat-link">💬 Telegramda javob berish</a>`
-                    : ''}
+                    <div style="font-size:12px;color:var(--${type === 'answered' ? 'success' : 'danger'});margin-bottom:8px">
+                        ${type === 'answered' ? `Javob berilgan (Kutish: ${this.formatTime(chat.response_time)})` : `Kutmoqda: ${this.formatTime(chat.waiting_time)}`}
                     </div>
                 </div>
             `).join('');
@@ -714,7 +649,8 @@ const App = {
     closeChatModal() {
         document.getElementById('chatModal').classList.add('hidden');
     },
-    /** ===== THEME ===== */
+
+    /** ===== THEME & UTILS ===== */
     toggleTheme() {
         const html = document.documentElement;
         const isDark = html.getAttribute('data-theme') !== 'light';
@@ -722,10 +658,9 @@ const App = {
         localStorage.setItem('theme', isDark ? 'light' : 'dark');
 
         const btn = document.getElementById('themeToggle');
-        btn.innerHTML = isDark ? '🌙 Dark mode' : '☀️ Light mode';
+        if (btn) btn.innerHTML = isDark ? '🌙 Dark mode' : '☀️ Light mode';
 
         Charts.updateTheme(!isDark);
-        // Re-render to update charts
         this.renderView();
     },
 
@@ -735,36 +670,13 @@ const App = {
         Charts.isDark = saved === 'dark';
         Charts.setDefaults();
         const btn = document.getElementById('themeToggle');
-        if (btn) {
-            btn.innerHTML = saved === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
-        }
+        if (btn) btn.innerHTML = saved === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
     },
 
-    /** ===== FORMATTERS ===== */
     formatNumber(n) {
         if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
         if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
         return (n || 0).toString();
-    },
-
-    formatTime(seconds) {
-        if (!seconds || seconds === 0) return '0s';
-        if (seconds > 86400) return Math.round(seconds / 86400) + 'k';
-        if (seconds > 3600) return (seconds / 3600).toFixed(1) + 'soat';
-        if (seconds > 60) return Math.round(seconds / 60) + 'daq';
-        return Math.round(seconds) + 's';
-    },
-
-    formatDate(isoStr) {
-        if (!isoStr) return '-';
-        const d = new Date(isoStr);
-        return d.toLocaleDateString('uz-UZ', { day: '2-digit', month: '2-digit', year: 'numeric' })
-            + ' ' + d.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
-    },
-
-    escapeHtml(str) {
-        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-        return (str || '').replace(/[&<>"']/g, c => map[c]);
     },
 };
 

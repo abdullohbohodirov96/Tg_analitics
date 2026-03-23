@@ -10,7 +10,7 @@ from sqlalchemy import select, func, case, and_, extract, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.models.models import Group, User, Message, Conversation, AdminUser
+from app.models.models import Group, User, Message, Conversation, AdminUser, PredefinedOperator
 
 
 class StatsRepository:
@@ -45,7 +45,27 @@ class StatsRepository:
         """Barcha guruhlarni ro'yxati"""
         result = await self.db.execute(select(Group).order_by(Group.title))
         groups = result.scalars().all()
-        return [{"id": g.id, "telegram_id": g.telegram_id, "title": g.title} for g in groups]
+        return [
+            {
+                "id": g.id, 
+                "telegram_id": g.telegram_id, 
+                "title": g.title,
+                "custom_title": g.custom_title,
+                "group_link": g.group_link
+            } for g in groups
+        ]
+
+    async def update_group(self, group_id: int, custom_title: Optional[str] = None, group_link: Optional[str] = None) -> Optional[Group]:
+        """Guruh ma'lumotlarini yangilash"""
+        result = await self.db.execute(select(Group).where(Group.id == group_id))
+        group = result.scalar_one_or_none()
+        if group:
+            if custom_title is not None:
+                group.custom_title = custom_title
+            if group_link is not None:
+                group.group_link = group_link
+            await self.db.flush()
+        return group
 
     # =====================================================
     # USER OPERATIONS
@@ -80,6 +100,13 @@ class StatsRepository:
             user.last_seen = datetime.utcnow()
         return user
 
+    async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:
+        """Telegram ID bo'yicha foydalanuvchini topish"""
+        result = await self.db.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        return result.scalar_one_or_none()
+
     async def set_user_as_operator(self, user_id: int):
         """Foydalanuvchini operator sifatida belgilash"""
         result = await self.db.execute(
@@ -89,12 +116,79 @@ class StatsRepository:
         if user:
             user.is_operator = True
 
-    async def get_operators(self) -> List[User]:
-        """Barcha operatorlarni olish"""
+    async def is_predefined_operator(self, username: str) -> bool:
+        """Username oldindan belgilangan operatorlar ro'yxatida bormi?"""
+        if not username:
+            return False
+        username = username.strip().replace("@", "").lower()
+        result = await self.db.execute(
+            select(PredefinedOperator).where(func.lower(PredefinedOperator.username) == username)
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def get_operators(self) -> List[Dict]:
+        """Barcha operatorlarni olish (User jadvalidan is_operator=True bo'lganlar)"""
         result = await self.db.execute(
             select(User).where(User.is_operator == True)
         )
-        return result.scalars().all()
+        users = result.scalars().all()
+        return [
+            {
+                "id": u.id,
+                "telegram_id": u.telegram_id,
+                "username": u.username,
+                "name": u.full_name,
+                "is_active": (datetime.utcnow() - u.last_seen).total_seconds() < 86400 if u.last_seen else False
+            } for u in users
+        ]
+
+    async def get_predefined_operators(self) -> List[Dict]:
+        """Oldindan belgilangan operatorlar ro'yxati"""
+        result = await self.db.execute(select(PredefinedOperator))
+        ops = result.scalars().all()
+        return [{"id": o.id, "username": o.username, "created_at": o.created_at.isoformat()} for o in ops]
+
+    async def add_predefined_operator(self, username: str) -> PredefinedOperator:
+        """Username orqali operator qo'shish"""
+        username = username.strip().replace("@", "").lower()
+        # Avval bormi tekshiramiz
+        result = await self.db.execute(
+            select(PredefinedOperator).where(PredefinedOperator.username == username)
+        )
+        op = result.scalar_one_or_none()
+        if not op:
+            op = PredefinedOperator(username=username)
+            self.db.add(op)
+            
+            # Agar bu user allaqachon bazada bo'lsa, is_operator ni True qilamiz
+            user_result = await self.db.execute(
+                select(User).where(func.lower(User.username) == username)
+            )
+            user = user_result.scalar_one_or_none()
+            if user:
+                user.is_operator = True
+                
+            await self.db.flush()
+        return op
+
+    async def remove_predefined_operator(self, op_id: int):
+        """Operatorni o'chirish"""
+        result = await self.db.execute(
+            select(PredefinedOperator).where(PredefinedOperator.id == op_id)
+        )
+        op = result.scalar_one_or_none()
+        if op:
+            # User jadvalidan ham is_operator ni olib tashlaymiz
+            user_result = await self.db.execute(
+                select(User).where(func.lower(User.username) == op.username.lower())
+            )
+            user = user_result.scalar_one_or_none()
+            if user:
+                user.is_operator = False
+                
+            await self.db.delete(op)
+            await self.db.flush()
+        return op
 
     # =====================================================
     # MESSAGE OPERATIONS
@@ -165,11 +259,37 @@ class StatsRepository:
             conv.operator_reply_id = operator_reply_id
             conv.response_time_seconds = response_time
             conv.answered_at = answered_at
+            await self.db.flush()
+
+    async def mark_user_conversations_answered(
+        self, user_id: int, group_id: int, operator_id: int,
+        operator_reply_id: int, answered_at: datetime
+    ):
+        """Foydalanuvchining barcha javobsiz suhbatlarini yopish"""
+        result = await self.db.execute(
+            select(Conversation).where(
+                Conversation.user_id == user_id,
+                Conversation.group_id == group_id,
+                Conversation.is_answered == False
+            )
+        )
+        convs = result.scalars().all()
+        for conv in convs:
+            conv.is_answered = True
+            conv.operator_id = operator_id
+            conv.operator_reply_id = operator_reply_id
+            conv.answered_at = answered_at
+            # Har biri uchun o'zining response_timesi bo'ladi
+            conv.response_time_seconds = (answered_at - conv.created_at).total_seconds()
+        
+        await self.db.flush()
+        return len(convs) > 0
 
     async def find_unanswered_conversation_by_message(
         self, group_id: int, user_message_id: int
     ) -> Optional[Conversation]:
-        """User message ID bo'yicha javobsiz suhbatni topish"""
+        """User message ID bo'yicha javobsiz suhbatni topish (aqlli qidiruv)"""
+        # 1. To'g'ridan-to'g'ri user_message_id bo'yicha (root message)
         result = await self.db.execute(
             select(Conversation).where(
                 and_(
@@ -179,7 +299,46 @@ class StatsRepository:
                 )
             )
         )
-        return result.scalar_one_or_none()
+        conv = result.scalar_one_or_none()
+        if conv:
+            return conv
+
+        # 2. Agar bu root message bo'lmasa, xabarni topamiz va uning userini aniqlaymiz
+        msg_result = await self.db.execute(
+            select(Message).where(
+                and_(
+                    Message.group_id == group_id,
+                    Message.telegram_message_id == user_message_id
+                )
+            )
+        )
+        msg = msg_result.scalar_one_or_none()
+        if msg:
+            # Ushbu userning ushbu guruhdagi istalgan javobsiz suhbatini topamiz
+            conv_result = await self.db.execute(
+                select(Conversation).where(
+                    and_(
+                        Conversation.group_id == group_id,
+                        Conversation.user_id == msg.user_id,
+                        Conversation.is_answered == False
+                    )
+                ).order_by(Conversation.created_at.desc())
+            )
+            return conv_result.scalar_one_or_none()
+
+        return None
+
+    async def get_oldest_unanswered_conversation(self, group_id: int) -> Optional[Conversation]:
+        """Guruhdagi eng eski javobsiz suhbatni topish"""
+        result = await self.db.execute(
+            select(Conversation).where(
+                and_(
+                    Conversation.group_id == group_id,
+                    Conversation.is_answered == False,
+                )
+            ).order_by(Conversation.created_at.asc())
+        )
+        return result.scalars().first()
 
     async def find_unanswered_conversation_by_user(
         self, group_id: int, user_id: int
@@ -258,13 +417,13 @@ class StatsRepository:
         active_operators = active_ops.scalar() or 0
 
         # Response rate
-        response_rate = (answered / total_conv * 100) if total_conv > 0 else 0
+        response_rate = (float(answered) / total_conv * 100) if total_conv > 0 else 0.0
 
         return {
             "total_messages": total_messages,
             "unique_users": unique_users,
             "response_rate": round(response_rate, 1),
-            "avg_response_time": round(avg_response_time, 1),
+            "avg_response_time": round(float(avg_response_time), 1),
             "unanswered_users": unanswered_users,
             "active_operators": active_operators,
             "total_conversations": total_conv,
@@ -310,7 +469,7 @@ class StatsRepository:
     async def get_operator_stats(
         self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
-        """Operatorlar statistikasi"""
+        """Operatorlar statistikasi (barcha operatorlarni o'z ichiga oladi)"""
         conv_filters = self._date_filters(Conversation.created_at, date_from, date_to, group_id=group_id, model=Conversation)
 
         result = await self.db.execute(
@@ -320,12 +479,13 @@ class StatsRepository:
                 User.username,
                 User.first_name,
                 User.last_name,
+                User.last_seen,
                 func.count(Conversation.id).label("total_replies"),
                 func.avg(Conversation.response_time_seconds).label("avg_response_time"),
                 func.count(func.distinct(Conversation.user_id)).label("answered_users"),
             )
-            .join(Conversation, Conversation.operator_id == User.id)
-            .where(Conversation.is_answered == True, *conv_filters)
+            .outerjoin(Conversation, and_(Conversation.operator_id == User.id, Conversation.is_answered == True, *conv_filters))
+            .where(User.is_operator == True)
             .group_by(User.id)
             .order_by(func.count(Conversation.id).desc())
         )
@@ -334,14 +494,20 @@ class StatsRepository:
             name = row.first_name or ""
             if row.last_name:
                 name += f" {row.last_name}"
+            
+            is_active = False
+            if row.last_seen:
+                is_active = (datetime.utcnow() - row.last_seen).total_seconds() < 86400
+
             operators.append({
                 "id": row.id,
                 "telegram_id": row.telegram_id,
                 "username": row.username,
                 "name": name.strip() or "Unknown",
-                "total_replies": row.total_replies,
-                "avg_response_time": round(row.avg_response_time or 0, 1),
-                "answered_users": row.answered_users,
+                "total_replies": row.total_replies or 0,
+                "avg_response_time": round(float(row.avg_response_time or 0.0), 1),
+                "answered_users": row.answered_users or 0,
+                "is_active": is_active
             })
         return operators
 
@@ -593,7 +759,7 @@ class StatsRepository:
                 "id": conv.id,
                 "username": user.username,
                 "name": name.strip() or "Unknown",
-                "response_time": round(conv.response_time_seconds or 0, 1),
+                "response_time": round(float(conv.response_time_seconds or 0.0), 1),
                 "created_at": conv.created_at.isoformat(),
             })
         return convs

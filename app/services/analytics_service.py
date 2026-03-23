@@ -24,6 +24,43 @@ class AnalyticsService:
         """Tizimdagi barcha guruhlar ro'yxati"""
         return await self.repo.get_groups()
 
+    async def update_group(self, group_id: int, custom_title: Optional[str] = None, group_link: Optional[str] = None) -> Optional[Dict]:
+        """Guruh ma'lumotlarini yangilash"""
+        group = await self.repo.update_group(group_id, custom_title, group_link)
+        if group:
+            return {
+                "id": group.id,
+                "telegram_id": group.telegram_id,
+                "title": group.title,
+                "custom_title": group.custom_title,
+                "group_link": group.group_link
+            }
+        return None
+
+    # =====================================================
+    # OPERATORS
+    # =====================================================
+
+    async def get_all_operators(
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Barcha operatorlar (aktiv va oldindan belgilangan)"""
+        active = await self.repo.get_operator_stats(date_from, date_to, group_id=group_id)
+        predefined = await self.repo.get_predefined_operators()
+        return {
+            "active": active,
+            "predefined": predefined
+        }
+
+    async def add_predefined_operator(self, username: str) -> Dict:
+        """Username orqali operator qo'shish"""
+        op = await self.repo.add_predefined_operator(username)
+        return {"id": op.id, "username": op.username}
+
+    async def remove_predefined_operator(self, op_id: int):
+        """Operatorni o'chirish"""
+        return await self.repo.remove_predefined_operator(op_id)
+
     # =====================================================
     # DATE RANGE HELPERS
     # =====================================================

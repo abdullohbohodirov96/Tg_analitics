@@ -44,12 +44,12 @@ class BotService:
     async def process_update(self, update: Dict[str, Any]):
         """
         Telegram update ni qayta ishlash.
-        1. Faqat group xabarlarni qayta ishlash
-        2. User va group ni saqlash
-        3. Xabarni saqlash
-        4. Agar reply bo'lsa, conversation ni yangilash
-        5. Bot commandlarni tekshirish
         """
+        # 0. Bot guruhga qo'shilganda yoki huquqlari o'zgarganda
+        if "my_chat_member" in update:
+            await self._handle_my_chat_member(update["my_chat_member"])
+            return
+
         message = update.get("message")
         if not message:
             return
@@ -59,7 +59,6 @@ class BotService:
 
         # Faqat group va supergroup xabarlarni qayta ishlash
         if chat_type not in ("group", "supergroup"):
-            # Private chatda command qabul qilish
             if chat_type == "private":
                 await self._handle_private_command(message)
             return
@@ -68,20 +67,12 @@ class BotService:
         if not from_user or from_user.get("is_bot", False):
             return
 
-        # Operator ni aniqlash username bo'yicha
-        username = from_user.get("username", "") or ""
-        is_from_operator = False
-        if settings.OPERATOR_USERNAMES:
-            operator_usernames = [u.strip().lower() for u in settings.OPERATOR_USERNAMES.split(",")]
-            if username.lower() in operator_usernames:
-                is_from_operator = True
-
         # Group va User ni saqlash
+        username = from_user.get("username", "") or ""
         group = await self.repo.get_or_create_group(
             telegram_id=chat["id"],
             title=chat.get("title"),
         )
-
         user = await self.repo.get_or_create_user(
             telegram_id=from_user["id"],
             username=username,
@@ -89,109 +80,125 @@ class BotService:
             last_name=from_user.get("last_name"),
         )
 
-        # Agar operator bo'lsa va is_operator hali False bo'lsa, yangilaymiz
-        if is_from_operator and not user.is_operator:
-            await self.repo.set_user_as_operator(user.id)
-            user.is_operator = True
-
-        # Qolgan is_from_operator logikasi avvalgi bazada bor user.is_operator ustiga ham qurilishi mumkin
-        is_from_operator = is_from_operator or user.is_operator
-
         # Bot command tekshirish
         text = message.get("text", "") or ""
         if text.startswith("/"):
             await self._handle_command(chat["id"], text, user)
             return
 
-        # Reply tekshirish 
+        # Javob (Answer) logikasi
         reply_to = message.get("reply_to_message")
-        reply_to_msg_id = None
+        answered_someone = False
 
         if reply_to:
-            reply_to_msg_id = reply_to.get("message_id")
-
-            # Agar operator javob berayotgan bo'lsa
-            if is_from_operator and reply_to_msg_id:
-                await self._handle_operator_reply(
+            # 1. Kimgadir reply qilinganda (agar u boshqa odam bo'lsa)
+            reply_to_user = reply_to.get("from", {})
+            if reply_to_user and reply_to_user.get("id") != from_user.get("id"):
+                # Boshqa odamga javob berildi
+                reply_to_msg_id = reply_to.get("message_id")
+                conv = await self.repo.find_unanswered_conversation_by_message(
                     group_id=group.id,
-                    operator=user,
-                    reply_to_message_id=reply_to_msg_id,
-                    reply_date=datetime.utcfromtimestamp(message["date"]),
-                    reply_telegram_id=message["message_id"],
+                    user_message_id=reply_to_msg_id,
                 )
+                
+                # Agar suhbat topilsa yoki shunchaki o'sha userning javoblarini yopish kerak bo'lsa
+                target_user_id = None
+                if conv:
+                    target_user_id = conv.user_id
+                else:
+                    # Bazadan o'sha telegram_id li userni topamiz
+                    target_user = await self.repo.get_user_by_telegram_id(reply_to_user["id"])
+                    if target_user:
+                        target_user_id = target_user.id
+                
+                if target_user_id:
+                    await self.repo.mark_user_conversations_answered(
+                        user_id=target_user_id,
+                        group_id=group.id,
+                        operator_id=user.id,
+                        operator_reply_id=message["message_id"],
+                        answered_at=datetime.utcfromtimestamp(message["date"]),
+                    )
+                    # Javob bergan odamni "operator" (staff) deb belgilab qo'yamiz (statistika uchun)
+                    if not user.is_operator:
+                        await self.repo.set_user_as_operator(user.id)
+                    answered_someone = True
+
+        # 2. Hech qanday replysiz xabar yozilganda (agar biron user kutayotgan bo'lsa)
+        if not answered_someone:
+            # Agar bu odam avval "javob beruvchi" (operator) bo'lgan bo'lsa 
+            if user.is_operator:
+                # Eng eski javobsiz suhbatni topib yopamiz
+                oldest_conv = await self.repo.get_oldest_unanswered_conversation(group.id)
+                if oldest_conv and oldest_conv.user_id != user.id:
+                    await self.repo.mark_user_conversations_answered(
+                        user_id=oldest_conv.user_id,
+                        group_id=group.id,
+                        operator_id=user.id,
+                        operator_reply_id=message["message_id"],
+                        answered_at=datetime.utcfromtimestamp(message["date"]),
+                    )
+                    answered_someone = True
 
         # Xabarni saqlash
         msg_date = datetime.utcfromtimestamp(message["date"])
-        saved_msg = await self.repo.save_message(
+        await self.repo.save_message(
             telegram_message_id=message["message_id"],
             group_id=group.id,
             user_id=user.id,
             text=text,
             date=msg_date,
-            reply_to_message_id=reply_to_msg_id,
-            is_from_operator=is_from_operator,
+            reply_to_message_id=reply_to.get("message_id") if reply_to else None,
+            is_from_operator=user.is_operator or answered_someone,
         )
 
-        # Operator bo'lmagan xabarlar bo'lsa suhbat logikasi:
-        if not is_from_operator:
-            # Ushbu userning javobsiz conversationi bormi tekshiramiz (guruhlash uchun)
+        # Agar bu kishining o'zi javob bermagan bo'lsa va bu oddiy xabar bo'lsa
+        if not answered_someone:
+            # O'zi uchun yangi suhbat ochish (agar hali ochilmagan bo'lsa)
             unanswered_conv = await self.repo.find_unanswered_conversation_by_user(
                 group_id=group.id,
                 user_id=user.id
             )
-            
             if not unanswered_conv:
-                # Yangi conversation ochamiz
                 await self.repo.create_conversation(
                     group_id=group.id,
                     user_id=user.id,
                     user_message_id=message["message_id"],
                 )
-            else:
-                # Bor bo'lsa, xuddi shu suhbat savoliga bu xabarni qo'shib qo'yamiz
-                # (Repository da oxirgi xabar vaqtini yangilash kabi qo'shimcha logic bo'lishi mumkin)
-                pass
 
-        # Shuningdek, operator xabariga "reply" qilmagan holda shunchaki chatinga javob bersa
-        # oxirgi javobsiz conversationni answered qilamiz
-        elif is_from_operator and not reply_to_msg_id:
-            # Agar operator guruhda shunchaki yozsa (replysiz), biz oxirgi javobsiz xabarni yopishimiz mumkin.
-            # Lekin buni ehtiyot bo'lib qilish kerak, chunki kimga yozgani aniq emas.
-            # Hozircha faqat reply qilsa yopiladigan qilamiz.
-            pass
+    async def _handle_my_chat_member(self, chat_member_update: Dict[str, Any]):
+        """Bot guruhga qo'shilganda yoki huquqlari o'zgarganda guruhni ro'yxatdan o'tkazish"""
+        chat = chat_member_update.get("chat", {})
+        if chat.get("type") in ("group", "supergroup"):
+            await self.repo.get_or_create_group(
+                telegram_id=chat["id"],
+                title=chat.get("title")
+            )
 
     async def _handle_operator_reply(
         self, group_id: int, operator, reply_to_message_id: int,
         reply_date: datetime, reply_telegram_id: int
-    ):
+    ) -> bool:
         """
-        Operator reply qilgandagi logika:
-        1. Reply qilingan xabarni topish
-        2. Usha xabar uchun ochilgan conversation ni topish
-        3. Conversation ni answered deb belgilash
-        4. Response time ni hisoblash
+        Operator reply qilgandagi logika. 
+        Javob berilganini tasdiqlasa True qaytaradi.
         """
-        # Reply qilingan xabar bilan bog'langan conversation ni topish
         conv = await self.repo.find_unanswered_conversation_by_message(
             group_id=group_id,
             user_message_id=reply_to_message_id,
         )
 
         if conv:
-            # Response time hisoblash
-            response_time = (reply_date - conv.created_at).total_seconds()
-
-            await self.repo.mark_conversation_answered(
-                conversation_id=conv.id,
+            # Foydalanuvchining o'sha guruhdagi barcha javobsiz suhbatlarini yopamiz
+            await self.repo.mark_user_conversations_answered(
+                user_id=conv.user_id,
+                group_id=group_id,
                 operator_id=operator.id,
                 operator_reply_id=reply_telegram_id,
-                response_time=max(0, response_time),
                 answered_at=reply_date,
             )
-
-            # Agar operator hali belgilanmagan bo'lsa
-            if not operator.is_operator:
-                await self.repo.set_user_as_operator(operator.id)
+            return True
+        return False
 
     # =====================================================
     # COMMAND HANDLERS
