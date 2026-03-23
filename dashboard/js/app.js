@@ -58,6 +58,18 @@ const App = {
             logoutBtn.addEventListener('click', () => Auth.logout());
         }
 
+        // Modal
+        const chatModalClose = document.getElementById('chatModalClose');
+        const chatModal = document.getElementById('chatModal');
+        if (chatModalClose) {
+            chatModalClose.addEventListener('click', () => this.closeChatModal());
+        }
+        if (chatModal) {
+            chatModal.addEventListener('click', (e) => {
+                if (e.target === chatModal) this.closeChatModal();
+            });
+        }
+
         // Mobile menu
         const menuToggle = document.getElementById('menuToggle');
         const sidebar = document.getElementById('sidebar');
@@ -218,9 +230,9 @@ const App = {
                     <div class="stat-label">Unique foydalanuvchilar</div>
                     <div class="stat-value">${this.formatNumber(overview.unique_users)}</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card clickable-card" onclick="App.openChatModal('answered')">
                     <div class="stat-icon purple">✅</div>
-                    <div class="stat-label">Javob darajasi</div>
+                    <div class="stat-label">Javob berilgan (Javob darajasi)</div>
                     <div class="stat-value">${overview.response_rate}%</div>
                 </div>
                 <div class="stat-card">
@@ -228,7 +240,7 @@ const App = {
                     <div class="stat-label">O'rtacha javob vaqti</div>
                     <div class="stat-value">${this.formatTime(overview.avg_response_time)}</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card clickable-card" onclick="App.openChatModal('unanswered')">
                     <div class="stat-icon red">❌</div>
                     <div class="stat-label">Javobsiz userlar</div>
                     <div class="stat-value">${this.formatNumber(overview.unanswered_users)}</div>
@@ -603,7 +615,66 @@ const App = {
             </table></div>
         `;
     },
+    /** ===== CHAT MODAL LOGIC ===== */
+    async openChatModal(type) {
+        const modal = document.getElementById('chatModal');
+        const title = document.getElementById('chatModalTitle');
+        const loading = document.getElementById('chatModalLoading');
+        const content = document.getElementById('chatModalContent');
 
+        modal.classList.remove('hidden');
+        title.textContent = type === 'unanswered' ? '❌ Javobsiz qolgan suhbatlar' : '✅ Javob berilgan suhbatlar';
+        content.innerHTML = '';
+        loading.classList.remove('hidden');
+
+        try {
+            const endpoint = type === 'unanswered' ? '/api/stats/unanswered' : '/api/stats/answered';
+            const data = await Auth.fetch(`${endpoint}${this.getQueryParams()}`);
+
+            loading.classList.add('hidden');
+
+            const list = data[type] || [];
+            if (list.length === 0) {
+                content.innerHTML = '<div class="empty-state"><p>Ma\'lumot topilmadi</p></div>';
+                return;
+            }
+
+            content.innerHTML = list.map(chat => `
+                <div class="chat-item">
+                    <div class="chat-header">
+                        <div class="chat-user">${chat.name} ${chat.username ? `<span style="color:var(--text-muted);font-weight:400">@${chat.username}</span>` : ''}</div>
+                        <div class="chat-time">${this.formatDate(chat.created_at)}</div>
+                    </div>
+                    ${chat.group_title ? `<div class="chat-group-badge">Guruh: ${chat.group_title}</div>` : ''}
+                    <div class="chat-text">
+                        ${this.escapeHtml(chat.message_text ? `"${chat.message_text}"` : '(Xabar matni yo\'q)')}
+                    </div>
+                    ${type === 'answered' ? `
+                    <div style="font-size:12px;color:var(--success);margin-bottom:8px">
+                        Javob berilgan (Kutish: ${this.formatTime(chat.response_time)})
+                    </div>
+                    ` : `
+                    <div style="font-size:12px;color:var(--danger);margin-bottom:8px">
+                        Kutmoqda: ${this.formatTime(chat.waiting_time)}
+                    </div>
+                    `}
+                    <div class="chat-actions">
+                        ${chat.group_telegram_id && chat.message_id ?
+                    `<a href="https://t.me/c/${chat.group_telegram_id}/${chat.message_id}" target="_blank" class="chat-link">💬 Telegramda javob berish</a>`
+                    : ''}
+                    </div>
+                </div>
+            `).join('');
+
+        } catch (error) {
+            loading.classList.add('hidden');
+            content.innerHTML = '<div class="empty-state"><p style="color:var(--danger)">Xatolik yuz berdi</p></div>';
+        }
+    },
+
+    closeChatModal() {
+        document.getElementById('chatModal').classList.add('hidden');
+    },
     /** ===== THEME ===== */
     toggleTheme() {
         const html = document.documentElement;

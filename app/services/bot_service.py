@@ -68,6 +68,14 @@ class BotService:
         if not from_user or from_user.get("is_bot", False):
             return
 
+        # Operator ni aniqlash username bo'yicha
+        username = from_user.get("username", "") or ""
+        is_from_operator = False
+        if settings.OPERATOR_USERNAMES:
+            operator_usernames = [u.strip().lower() for u in settings.OPERATOR_USERNAMES.split(",")]
+            if username.lower() in operator_usernames:
+                is_from_operator = True
+
         # Group va User ni saqlash
         group = await self.repo.get_or_create_group(
             telegram_id=chat["id"],
@@ -76,10 +84,18 @@ class BotService:
 
         user = await self.repo.get_or_create_user(
             telegram_id=from_user["id"],
-            username=from_user.get("username"),
+            username=username,
             first_name=from_user.get("first_name"),
             last_name=from_user.get("last_name"),
         )
+
+        # Agar operator bo'lsa va is_operator hali False bo'lsa, yangilaymiz
+        if is_from_operator and not user.is_operator:
+            await self.repo.set_user_as_operator(user.id)
+            user.is_operator = True
+
+        # Qolgan is_from_operator logikasi avvalgi bazada bor user.is_operator ustiga ham qurilishi mumkin
+        is_from_operator = is_from_operator or user.is_operator
 
         # Bot command tekshirish
         text = message.get("text", "") or ""
@@ -87,15 +103,14 @@ class BotService:
             await self._handle_command(chat["id"], text, user)
             return
 
-        # Reply tekshirish — operator javobi ekanligini aniqlash
+        # Reply tekshirish 
         reply_to = message.get("reply_to_message")
         reply_to_msg_id = None
-        is_from_operator = user.is_operator
 
         if reply_to:
             reply_to_msg_id = reply_to.get("message_id")
 
-            # Agar operator boshqa user xabariga reply qilsa
+            # Agar operator javob berayotgan bo'lsa
             if is_from_operator and reply_to_msg_id:
                 await self._handle_operator_reply(
                     group_id=group.id,
@@ -117,13 +132,33 @@ class BotService:
             is_from_operator=is_from_operator,
         )
 
-        # Agar oddiy user xabar yozsa — yangi conversation ochish
-        if not is_from_operator and not reply_to_msg_id:
-            await self.repo.create_conversation(
+        # Operator bo'lmagan xabarlar bo'lsa suhbat logikasi:
+        if not is_from_operator:
+            # Ushbu userning javobsiz conversationi bormi tekshiramiz (guruhlash uchun)
+            unanswered_conv = await self.repo.find_unanswered_conversation_by_user(
                 group_id=group.id,
-                user_id=user.id,
-                user_message_id=message["message_id"],
+                user_id=user.id
             )
+            
+            if not unanswered_conv:
+                # Yangi conversation ochamiz
+                await self.repo.create_conversation(
+                    group_id=group.id,
+                    user_id=user.id,
+                    user_message_id=message["message_id"],
+                )
+            else:
+                # Bor bo'lsa, xuddi shu suhbat savoliga bu xabarni qo'shib qo'yamiz
+                # (Repository da oxirgi xabar vaqtini yangilash kabi qo'shimcha logic bo'lishi mumkin)
+                pass
+
+        # Shuningdek, operator xabariga "reply" qilmagan holda shunchaki chatinga javob bersa
+        # oxirgi javobsiz conversationni answered qilamiz
+        elif is_from_operator and not reply_to_msg_id:
+            # Agar operator guruhda shunchaki yozsa (replysiz), biz oxirgi javobsiz xabarni yopishimiz mumkin.
+            # Lekin buni ehtiyot bo'lib qilish kerak, chunki kimga yozgani aniq emas.
+            # Hozircha faqat reply qilsa yopiladigan qilamiz.
+            pass
 
     async def _handle_operator_reply(
         self, group_id: int, operator, reply_to_message_id: int,

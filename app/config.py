@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # Telegram Bot
     BOT_TOKEN: str = ""
     WEBHOOK_SECRET: str = "default_secret_change_me"
+    OPERATOR_USERNAMES: str = ""  # vergul bilan ajratilgan: admin,manager,operator
 
     # Database — Railway avtomatik beradi
     # Railway format: postgresql://user:pass@host:port/db

@@ -128,6 +128,12 @@ class AnalyticsService:
         """Javobsiz qolgan suhbatlar"""
         return await self.repo.get_unanswered_conversations(date_from, date_to)
 
+    async def get_answered(
+        self, date_from: datetime = None, date_to: datetime = None
+    ) -> List[Dict]:
+        """Javob berilgan suhbatlar"""
+        return await self.repo.get_answered_conversations(date_from, date_to)
+
     async def get_slow_responses(
         self, date_from: datetime = None, date_to: datetime = None
     ) -> List[Dict]:

@@ -171,6 +171,21 @@ class StatsRepository:
         )
         return result.scalar_one_or_none()
 
+    async def find_unanswered_conversation_by_user(
+        self, group_id: int, user_id: int
+    ) -> Optional[Conversation]:
+        """Ayni foydalanuvchining guruhdagi javobsiz qolgan suhbatini topish"""
+        result = await self.db.execute(
+            select(Conversation).where(
+                and_(
+                    Conversation.group_id == group_id,
+                    Conversation.user_id == user_id,
+                    Conversation.is_answered == False,
+                )
+            ).order_by(Conversation.created_at.desc())
+        )
+        return result.scalars().first()
+
     # =====================================================
     # STATISTICS QUERIES
     # =====================================================
@@ -324,8 +339,10 @@ class StatsRepository:
         self, date_from: datetime = None, date_to: datetime = None,
         limit: int = 50
     ) -> List[Dict]:
-        """Javobsiz qolgan suhbatlar"""
+        """Javobsiz qolgan suhbatlar to'liq ma'lumoti"""
         conv_filters = self._date_filters(Conversation.created_at, date_from, date_to)
+        
+        # Subquery orqali textni olish (eng oson usul) - xavfsiz va samarali
         result = await self.db.execute(
             select(
                 Conversation.id,
@@ -335,8 +352,13 @@ class StatsRepository:
                 User.username,
                 User.first_name,
                 User.last_name,
+                Group.telegram_id.label("group_telegram_id"),
+                Group.title.label("group_title"),
+                Message.text.label("message_text")
             )
             .join(User, Conversation.user_id == User.id)
+            .join(Group, Conversation.group_id == Group.id)
+            .outerjoin(Message, and_(Message.telegram_message_id == Conversation.user_message_id, Message.group_id == Conversation.group_id))
             .where(Conversation.is_answered == False, *conv_filters)
             .order_by(Conversation.created_at.desc())
             .limit(limit)
@@ -352,8 +374,60 @@ class StatsRepository:
                 "username": row.username,
                 "name": name.strip() or "Unknown",
                 "message_id": row.user_message_id,
+                "group_telegram_id": str(row.group_telegram_id).replace("-100", "") if str(row.group_telegram_id).startswith("-100") else row.group_telegram_id,
+                "group_title": row.group_title,
+                "message_text": (row.message_text or "")[:200],
                 "created_at": row.created_at.isoformat(),
                 "waiting_time": (datetime.utcnow() - row.created_at).total_seconds(),
+            })
+        return convs
+
+    async def get_answered_conversations(
+        self, date_from: datetime = None, date_to: datetime = None,
+        limit: int = 50
+    ) -> List[Dict]:
+        """Javob berilgan suhbatlar to'liq ma'lumoti"""
+        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to)
+        
+        result = await self.db.execute(
+            select(
+                Conversation.id,
+                Conversation.created_at,
+                Conversation.answered_at,
+                Conversation.user_message_id,
+                Conversation.response_time_seconds,
+                User.telegram_id,
+                User.username,
+                User.first_name,
+                User.last_name,
+                Group.telegram_id.label("group_telegram_id"),
+                Group.title.label("group_title"),
+                Message.text.label("message_text")
+            )
+            .join(User, Conversation.user_id == User.id)
+            .join(Group, Conversation.group_id == Group.id)
+            .outerjoin(Message, and_(Message.telegram_message_id == Conversation.user_message_id, Message.group_id == Conversation.group_id))
+            .where(Conversation.is_answered == True, *conv_filters)
+            .order_by(Conversation.answered_at.desc())
+            .limit(limit)
+        )
+        convs = []
+        for row in result:
+            name = row.first_name or ""
+            if row.last_name:
+                name += f" {row.last_name}"
+            convs.append({
+                "id": row.id,
+                "user_telegram_id": row.telegram_id,
+                "username": row.username,
+                "name": name.strip() or "Unknown",
+                "message_id": row.user_message_id,
+                "group_telegram_id": str(row.group_telegram_id).replace("-100", "") if str(row.group_telegram_id).startswith("-100") else row.group_telegram_id,
+                "group_title": row.group_title,
+                "message_text": (row.message_text or "")[:200],
+                "created_at": row.created_at.isoformat(),
+                "answered_at": row.answered_at.isoformat() if row.answered_at else None,
+                "response_time": round(row.response_time_seconds or 0, 1)
             })
         return convs
 

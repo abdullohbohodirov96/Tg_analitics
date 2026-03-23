@@ -214,6 +214,18 @@ async def get_unanswered(
     unanswered = await service.get_unanswered(parse_date(date_from), parse_date(date_to))
     return {"unanswered": unanswered}
 
+@router.get("/answered")
+async def get_answered(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Javob berilgan suhbatlar"""
+    service = AnalyticsService(db)
+    answered = await service.get_answered(parse_date(date_from), parse_date(date_to))
+    return {"answered": answered}
+
 
 @router.get("/conversations")
 async def get_conversations(
