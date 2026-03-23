@@ -321,6 +321,28 @@ button {
     box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
+.filter-select {
+    padding: 7px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+    outline: none;
+}
+
+.filter-select:hover {
+    border-color: var(--accent);
+}
+
+.filter-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
 .filter-custom {
     display: flex;
     align-items: center;
@@ -364,6 +386,14 @@ button {
     border-color: var(--border-color-hover);
     box-shadow: var(--shadow-md);
     transform: translateY(-2px);
+}
+
+.stat-card.clickable-card {
+    cursor: pointer;
+}
+
+.stat-card.clickable-card:active {
+    transform: translateY(0);
 }
 
 .stat-card .stat-icon {

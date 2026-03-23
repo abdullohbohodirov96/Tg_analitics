@@ -23,7 +23,7 @@ class StatsRepository:
     # GROUP OPERATIONS
     # =====================================================
 
-    async def get_or_create_group(self, telegram_id: int, title: str = None) -> Group:
+    async def get_or_create_group(self, telegram_id: int, title: Optional[str] = None) -> Group:
         """Guruhni topish yoki yaratish"""
         result = await self.db.execute(
             select(Group).where(Group.telegram_id == telegram_id)
@@ -38,12 +38,22 @@ class StatsRepository:
         return group
 
     # =====================================================
+    # GROUP LIST
+    # =====================================================
+
+    async def get_groups(self) -> List[Dict]:
+        """Barcha guruhlarni ro'yxati"""
+        result = await self.db.execute(select(Group).order_by(Group.title))
+        groups = result.scalars().all()
+        return [{"id": g.id, "telegram_id": g.telegram_id, "title": g.title} for g in groups]
+
+    # =====================================================
     # USER OPERATIONS
     # =====================================================
 
     async def get_or_create_user(
-        self, telegram_id: int, username: str = None,
-        first_name: str = None, last_name: str = None
+        self, telegram_id: int, username: Optional[str] = None,
+        first_name: Optional[str] = None, last_name: Optional[str] = None
     ) -> User:
         """Foydalanuvchini topish yoki yaratish"""
         result = await self.db.execute(
@@ -92,7 +102,7 @@ class StatsRepository:
 
     async def save_message(
         self, telegram_message_id: int, group_id: int, user_id: int,
-        text: str, date: datetime, reply_to_message_id: int = None,
+        text: str, date: datetime, reply_to_message_id: Optional[int] = None,
         is_from_operator: bool = False
     ) -> Message:
         """Xabarni saqlash"""
@@ -191,11 +201,11 @@ class StatsRepository:
     # =====================================================
 
     async def get_overview_stats(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """Umumiy statistika"""
-        filters = self._date_filters(Message.date, date_from, date_to)
-        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to)
+        filters = self._date_filters(Message.date, date_from, date_to, group_id=group_id, model=Message)
+        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to, group_id=group_id, model=Conversation)
 
         # Jami xabarlar soni
         total_msg = await self.db.execute(
@@ -262,26 +272,26 @@ class StatsRepository:
         }
 
     async def get_daily_messages(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Kunlik xabar soni"""
-        filters = self._date_filters(Message.date, date_from, date_to)
+        filters = self._date_filters(Message.date, date_from, date_to, group_id=group_id, model=Message)
         result = await self.db.execute(
             select(
-                func.date_trunc("day", Message.date).label("day"),
+                func.date(Message.date).label("day"),
                 func.count(Message.id).label("count"),
             )
             .where(*filters)
-            .group_by("day")
-            .order_by("day")
+            .group_by(func.date(Message.date))
+            .order_by(func.date(Message.date))
         )
-        return [{"date": str(row.day.date()), "count": row.count} for row in result]
+        return [{"date": row.day.isoformat(), "count": row.count} for row in result]
 
     async def get_hourly_heatmap(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Soatlik heatmap (qaysi soatda ko'p xabar keladi)"""
-        filters = self._date_filters(Message.date, date_from, date_to)
+        filters = self._date_filters(Message.date, date_from, date_to, group_id=group_id, model=Message)
         result = await self.db.execute(
             select(
                 extract("dow", Message.date).label("day_of_week"),
@@ -298,10 +308,10 @@ class StatsRepository:
         ]
 
     async def get_operator_stats(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Operatorlar statistikasi"""
-        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to)
+        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to, group_id=group_id, model=Conversation)
 
         result = await self.db.execute(
             select(
@@ -336,11 +346,11 @@ class StatsRepository:
         return operators
 
     async def get_unanswered_conversations(
-        self, date_from: datetime = None, date_to: datetime = None,
-        limit: int = 50
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None,
+        limit: int = 50, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Javobsiz qolgan suhbatlar to'liq ma'lumoti"""
-        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to)
+        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to, group_id=group_id, model=Conversation)
         
         # Subquery orqali textni olish (eng oson usul) - xavfsiz va samarali
         result = await self.db.execute(
@@ -383,11 +393,11 @@ class StatsRepository:
         return convs
 
     async def get_answered_conversations(
-        self, date_from: datetime = None, date_to: datetime = None,
-        limit: int = 50
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None,
+        limit: int = 50, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Javob berilgan suhbatlar to'liq ma'lumoti"""
-        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to)
+        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to, group_id=group_id, model=Conversation)
         
         result = await self.db.execute(
             select(
@@ -432,11 +442,11 @@ class StatsRepository:
         return convs
 
     async def get_top_users(
-        self, date_from: datetime = None, date_to: datetime = None,
-        limit: int = 20
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None,
+        limit: int = 20, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Eng faol foydalanuvchilar"""
-        filters = self._date_filters(Message.date, date_from, date_to)
+        filters = self._date_filters(Message.date, date_from, date_to, group_id=group_id, model=Message)
         result = await self.db.execute(
             select(
                 User.id,
@@ -472,10 +482,10 @@ class StatsRepository:
 
     async def get_recent_messages(
         self, limit: int = 50,
-        date_from: datetime = None, date_to: datetime = None
+        date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """So'nggi xabarlar"""
-        filters = self._date_filters(Message.date, date_from, date_to)
+        filters = self._date_filters(Message.date, date_from, date_to, group_id=group_id, model=Message)
         result = await self.db.execute(
             select(
                 Message.id,
@@ -512,10 +522,10 @@ class StatsRepository:
         return messages
 
     async def get_response_time_trend(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Kunlik o'rtacha javob vaqti trendi"""
-        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to)
+        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to, group_id=group_id, model=Conversation)
         result = await self.db.execute(
             select(
                 func.date_trunc("day", Conversation.created_at).label("day"),
@@ -536,10 +546,15 @@ class StatsRepository:
         ]
 
     async def get_user_growth(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Kunlik yangi foydalanuvchilar soni"""
         filters = self._date_filters(User.first_seen, date_from, date_to)
+        if group_id:
+            # Only users who messaged in this group
+            user_ids_subq = select(Message.user_id).where(Message.group_id == group_id).distinct()
+            filters.append(User.id.in_(user_ids_subq))
+
         result = await self.db.execute(
             select(
                 func.date_trunc("day", User.first_seen).label("day"),
@@ -555,11 +570,11 @@ class StatsRepository:
         ]
 
     async def get_slow_responses(
-        self, date_from: datetime = None, date_to: datetime = None,
-        limit: int = 20
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None,
+        limit: int = 20, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Eng sekin javob berilgan suhbatlar"""
-        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to)
+        conv_filters = self._date_filters(Conversation.created_at, date_from, date_to, group_id=group_id, model=Conversation)
         result = await self.db.execute(
             select(Conversation, User)
             .join(User, Conversation.user_id == User.id)
@@ -700,12 +715,18 @@ class StatsRepository:
     # HELPERS
     # =====================================================
 
-    @staticmethod
-    def _date_filters(column, date_from: datetime = None, date_to: datetime = None) -> list:
-        """Date filter shartlari yaratish"""
+    def _date_filters(
+        self, column, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, 
+        group_id: Optional[int] = None, model = None
+    ) -> list:
+        """Date va guruh filter shartlari yaratish"""
         filters = []
         if date_from:
             filters.append(column >= date_from)
         if date_to:
             filters.append(column <= date_to)
+        if group_id and model:
+            # Check if model has group_id attribute
+            if hasattr(model, 'group_id'):
+                filters.append(model.group_id == group_id)
         return filters

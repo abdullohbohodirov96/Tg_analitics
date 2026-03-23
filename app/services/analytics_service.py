@@ -17,6 +17,14 @@ class AnalyticsService:
         self.repo = StatsRepository(db)
 
     # =====================================================
+    # GROUPS
+    # =====================================================
+
+    async def get_groups(self) -> List[Dict]:
+        """Tizimdagi barcha guruhlar ro'yxati"""
+        return await self.repo.get_groups()
+
+    # =====================================================
     # DATE RANGE HELPERS
     # =====================================================
 
@@ -48,53 +56,53 @@ class AnalyticsService:
     # =====================================================
 
     async def get_overview(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """Umumiy ko'rsatkichlar"""
-        return await self.repo.get_overview_stats(date_from, date_to)
+        return await self.repo.get_overview_stats(date_from, date_to, group_id=group_id)
 
-    async def get_period_overview(self, period: str) -> Dict[str, Any]:
+    async def get_period_overview(self, period: str, group_id: Optional[int] = None) -> Dict[str, Any]:
         """Period bo'yicha umumiy ko'rsatkichlar"""
         date_from, date_to = self.get_date_range(period)
-        return await self.repo.get_overview_stats(date_from, date_to)
+        return await self.repo.get_overview_stats(date_from, date_to, group_id=group_id)
 
     # =====================================================
     # CHARTS DATA
     # =====================================================
 
     async def get_daily_messages(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Kunlik xabarlar grafigi uchun ma'lumot"""
-        return await self.repo.get_daily_messages(date_from, date_to)
+        return await self.repo.get_daily_messages(date_from, date_to, group_id=group_id)
 
     async def get_response_time_trend(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Javob vaqti trendi"""
-        return await self.repo.get_response_time_trend(date_from, date_to)
+        return await self.repo.get_response_time_trend(date_from, date_to, group_id=group_id)
 
     async def get_hourly_heatmap(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Soatlik aktivlik heatmapi"""
-        return await self.repo.get_hourly_heatmap(date_from, date_to)
+        return await self.repo.get_hourly_heatmap(date_from, date_to, group_id=group_id)
 
     async def get_user_growth(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Foydalanuvchilar o'sish grafigi"""
-        return await self.repo.get_user_growth(date_from, date_to)
+        return await self.repo.get_user_growth(date_from, date_to, group_id=group_id)
 
     # =====================================================
     # OPERATORS
     # =====================================================
 
     async def get_operators(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Operatorlar ro'yxati va statistikasi"""
-        operators = await self.repo.get_operator_stats(date_from, date_to)
+        operators = await self.repo.get_operator_stats(date_from, date_to, group_id=group_id)
         # Rank qo'shish
         for i, op in enumerate(operators, 1):
             op["rank"] = i
@@ -109,10 +117,10 @@ class AnalyticsService:
     # =====================================================
 
     async def get_top_users(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Eng faol foydalanuvchilar"""
-        return await self.repo.get_top_users(date_from, date_to)
+        return await self.repo.get_top_users(date_from, date_to, group_id=group_id)
 
     async def get_user_detail(self, user_id: int) -> Optional[Dict]:
         """Bitta foydalanuvchi haqida batafsil"""
@@ -123,40 +131,40 @@ class AnalyticsService:
     # =====================================================
 
     async def get_unanswered(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Javobsiz qolgan suhbatlar"""
-        return await self.repo.get_unanswered_conversations(date_from, date_to)
+        return await self.repo.get_unanswered_conversations(date_from, date_to, group_id=group_id)
 
     async def get_answered(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Javob berilgan suhbatlar"""
-        return await self.repo.get_answered_conversations(date_from, date_to)
+        return await self.repo.get_answered_conversations(date_from, date_to, group_id=group_id)
 
     async def get_slow_responses(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Sekin javob berilgan suhbatlar"""
-        return await self.repo.get_slow_responses(date_from, date_to)
+        return await self.repo.get_slow_responses(date_from, date_to, group_id=group_id)
 
     # =====================================================
     # MESSAGES
     # =====================================================
 
     async def get_recent_messages(
-        self, date_from: datetime = None, date_to: datetime = None
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, group_id: Optional[int] = None
     ) -> List[Dict]:
         """So'nggi xabarlar"""
         return await self.repo.get_recent_messages(
-            date_from=date_from, date_to=date_to
+            date_from=date_from, date_to=date_to, group_id=group_id
         )
 
     # =====================================================
     # BOT UCHUN FORMATLANGAN NATIJALAR
     # =====================================================
 
-    async def format_stats_for_bot(self, period: str = None) -> str:
+    async def format_stats_for_bot(self, period: Optional[str] = None) -> str:
         """Telegram bot uchun formatlangan statistika"""
         date_from, date_to = (None, None)
         if period:
@@ -164,12 +172,14 @@ class AnalyticsService:
 
         stats = await self.repo.get_overview_stats(date_from, date_to)
 
+        period_key = period or "total"
         period_name = {
             "today": "📅 Bugun",
             "yesterday": "📅 Kecha",
             "week": "📅 Oxirgi 7 kun",
             "month": "📅 Oxirgi 30 kun",
-        }.get(period, "📊 Umumiy")
+            "total": "📊 Umumiy",
+        }.get(period_key, "📊 Umumiy")
 
         # Javob vaqtini formatlash
         rt = stats["avg_response_time"]

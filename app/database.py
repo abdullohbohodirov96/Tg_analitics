@@ -48,7 +48,20 @@ async def get_db() -> AsyncSession:
             await session.close()
 
 
+from sqlalchemy import text
+
 async def create_tables():
-    """Barcha jadvallarni yaratish (development uchun)"""
+    """Barcha jadvallarni yaratish (development uchun) va yangi columnlarni qo'shish"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Migrations (Add missing columns if they don't exist)
+        try:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN text TEXT"))
+        except Exception:
+            pass  # Already exists
+
+        try:
+            await conn.execute(text("ALTER TABLE conversations ADD COLUMN response_time_seconds DOUBLE PRECISION"))
+        except Exception:
+            pass  # Already exists

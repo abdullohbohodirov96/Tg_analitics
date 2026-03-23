@@ -29,6 +29,15 @@ def parse_date(date_str: Optional[str]) -> Optional[datetime]:
         except ValueError:
             return None
 
+@router.get("/groups")
+async def get_groups(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Tizimdagi barcha guruhlar ro'yxati"""
+    service = AnalyticsService(db)
+    return await service.get_groups()
+
 
 # =====================================================
 # OVERVIEW ENDPOINTS
@@ -38,6 +47,7 @@ def parse_date(date_str: Optional[str]) -> Optional[datetime]:
 async def get_overview(
     date_from: Optional[str] = Query(None, description="Boshlanish sanasi (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="Tugash sanasi (YYYY-MM-DD)"),
+    group_id: Optional[int] = Query(None, description="Guruh ID (ixtiyoriy)"),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
@@ -47,37 +57,40 @@ async def get_overview(
     average response time, unanswered users, active operators.
     """
     service = AnalyticsService(db)
-    return await service.get_overview(parse_date(date_from), parse_date(date_to))
+    return await service.get_overview(parse_date(date_from), parse_date(date_to), group_id=group_id)
 
 
 @router.get("/today")
 async def get_today(
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Bugungi statistika"""
     service = AnalyticsService(db)
-    return await service.get_period_overview("today")
+    return await service.get_period_overview("today", group_id=group_id)
 
 
 @router.get("/week")
 async def get_week(
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Haftalik statistika"""
     service = AnalyticsService(db)
-    return await service.get_period_overview("week")
+    return await service.get_period_overview("week", group_id=group_id)
 
 
 @router.get("/month")
 async def get_month(
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Oylik statistika"""
     service = AnalyticsService(db)
-    return await service.get_period_overview("month")
+    return await service.get_period_overview("month", group_id=group_id)
 
 
 # =====================================================
@@ -88,12 +101,13 @@ async def get_month(
 async def get_messages(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Kunlik xabarlar grafigi uchun ma'lumot"""
     service = AnalyticsService(db)
-    daily = await service.get_daily_messages(parse_date(date_from), parse_date(date_to))
+    daily = await service.get_daily_messages(parse_date(date_from), parse_date(date_to), group_id=group_id)
     return {"daily_messages": daily}
 
 
@@ -101,12 +115,13 @@ async def get_messages(
 async def get_response_time(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Javob vaqti trendi"""
     service = AnalyticsService(db)
-    trend = await service.get_response_time_trend(parse_date(date_from), parse_date(date_to))
+    trend = await service.get_response_time_trend(parse_date(date_from), parse_date(date_to), group_id=group_id)
     return {"response_time_trend": trend}
 
 
@@ -114,12 +129,13 @@ async def get_response_time(
 async def get_heatmap(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Soatlik aktivlik heatmapi"""
     service = AnalyticsService(db)
-    heatmap = await service.get_hourly_heatmap(parse_date(date_from), parse_date(date_to))
+    heatmap = await service.get_hourly_heatmap(parse_date(date_from), parse_date(date_to), group_id=group_id)
     return {"heatmap": heatmap}
 
 
@@ -127,12 +143,13 @@ async def get_heatmap(
 async def get_user_growth(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Foydalanuvchilar o'sish grafigi"""
     service = AnalyticsService(db)
-    growth = await service.get_user_growth(parse_date(date_from), parse_date(date_to))
+    growth = await service.get_user_growth(parse_date(date_from), parse_date(date_to), group_id=group_id)
     return {"user_growth": growth}
 
 
@@ -144,12 +161,13 @@ async def get_user_growth(
 async def get_operators(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Operatorlar ro'yxati va statistikasi"""
     service = AnalyticsService(db)
-    operators = await service.get_operators(parse_date(date_from), parse_date(date_to))
+    operators = await service.get_operators(parse_date(date_from), parse_date(date_to), group_id=group_id)
     return {"operators": operators}
 
 
@@ -175,12 +193,13 @@ async def get_operator_detail(
 async def get_users(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Eng faol foydalanuvchilar"""
     service = AnalyticsService(db)
-    users = await service.get_top_users(parse_date(date_from), parse_date(date_to))
+    users = await service.get_top_users(parse_date(date_from), parse_date(date_to), group_id=group_id)
     return {"users": users}
 
 
@@ -206,24 +225,26 @@ async def get_user_detail(
 async def get_unanswered(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Javobsiz qolgan suhbatlar"""
     service = AnalyticsService(db)
-    unanswered = await service.get_unanswered(parse_date(date_from), parse_date(date_to))
+    unanswered = await service.get_unanswered(parse_date(date_from), parse_date(date_to), group_id=group_id)
     return {"unanswered": unanswered}
 
 @router.get("/answered")
 async def get_answered(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Javob berilgan suhbatlar"""
     service = AnalyticsService(db)
-    answered = await service.get_answered(parse_date(date_from), parse_date(date_to))
+    answered = await service.get_answered(parse_date(date_from), parse_date(date_to), group_id=group_id)
     return {"answered": answered}
 
 
@@ -231,11 +252,12 @@ async def get_answered(
 async def get_conversations(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
     """Sekin javob berilgan suhbatlar"""
     service = AnalyticsService(db)
-    slow = await service.get_slow_responses(parse_date(date_from), parse_date(date_to))
-    recent = await service.get_recent_messages(parse_date(date_from), parse_date(date_to))
+    slow = await service.get_slow_responses(parse_date(date_from), parse_date(date_to), group_id=group_id)
+    recent = await service.get_recent_messages(parse_date(date_from), parse_date(date_to), group_id=group_id)
     return {"slow_responses": slow, "recent_messages": recent}

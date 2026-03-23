@@ -6,9 +6,11 @@
 const App = {
     currentView: 'overview',
     currentFilter: 'week',
+    currentGroupId: '',
     dateFrom: null,
     dateTo: null,
     cachedData: {},
+    groups: [],
 
     /** Ilovani boshlash */
     init() {
@@ -17,7 +19,9 @@ const App = {
         Charts.setDefaults();
         this.bindEvents();
         this.loadTheme();
-        this.navigate('overview');
+        this.loadGroups().then(() => {
+            this.navigate('overview');
+        });
     },
 
     /** Hodisalarni bog'lash */
@@ -35,6 +39,15 @@ const App = {
                 this.setFilter(btn.dataset.period);
             });
         });
+
+        // Group filter
+        const groupSelect = document.getElementById('groupSelect');
+        if (groupSelect) {
+            groupSelect.addEventListener('change', (e) => {
+                this.currentGroupId = e.target.value;
+                this.renderView();
+            });
+        }
 
         // Custom date
         const dateFromInput = document.getElementById('dateFrom');
@@ -195,7 +208,33 @@ const App = {
         const params = new URLSearchParams();
         if (this.dateFrom) params.set('date_from', this.dateFrom);
         if (this.dateTo) params.set('date_to', this.dateTo);
+        if (this.currentGroupId) params.set('group_id', this.currentGroupId);
         return params.toString() ? '?' + params.toString() : '';
+    },
+
+    /** ===== GROUPS ===== */
+    async loadGroups() {
+        try {
+            const data = await Auth.fetch('/api/stats/groups');
+            if (data) {
+                this.groups = data;
+                this.renderGroupSelect();
+            }
+        } catch (e) {
+            console.error("Gruppalarni yuklashda xato:", e);
+        }
+    },
+
+    renderGroupSelect() {
+        const select = document.getElementById('groupSelect');
+        if (!select) return;
+
+        let html = '<option value="">Barcha guruhlar</option>';
+        this.groups.forEach(g => {
+            html += `<option value="${g.id}">${this.escapeHtml(g.title || 'Nomsiz guruh')}</option>`;
+        });
+        select.innerHTML = html;
+        select.value = this.currentGroupId;
     },
 
     /** ===== OVERVIEW PAGE ===== */
