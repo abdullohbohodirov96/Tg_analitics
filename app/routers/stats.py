@@ -175,7 +175,7 @@ async def get_user_growth(
 
 
 # =====================================================
-# OPERATORS
+# OPERATORS & TASKS
 # =====================================================
 
 @router.get("/operators")
@@ -186,10 +186,63 @@ async def get_operators(
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
-    """Operatorlar ro'yxati va statistikasi"""
+    """Barcha operatorlar ro'yxati va statistikasi"""
     service = AnalyticsService(db)
-    operators = await service.get_operators(parse_date(date_from), parse_date(date_to), group_id=group_id)
-    return {"operators": operators}
+    return await service.get_all_operators(
+        date_from=parse_date(date_from),
+        date_to=parse_date(date_to),
+        group_id=group_id
+    )
+
+class TaskCreate(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    group_id: int
+    user_id: int
+    conversation_id: Optional[int] = None
+    priority: Optional[str] = "medium"
+    due_date: Optional[str] = None
+
+@router.get("/tasks")
+async def get_tasks(
+    group_id: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Vazifalar ro'yxati"""
+    service = AnalyticsService(db)
+    tasks = await service.get_tasks(group_id=group_id, status=status)
+    return {"tasks": tasks}
+
+@router.post("/tasks")
+async def create_task(
+    data: TaskCreate,
+    db: AsyncSession = Depends(get_db),
+    admin: dict = Depends(get_current_admin),
+):
+    """Yangi vazifa yaratish"""
+    service = AnalyticsService(db)
+    return await service.create_task(data.dict(), created_by_id=admin["id"])
+
+class TaskUpdate(BaseModel):
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    assigned_operator_id: Optional[int] = None
+
+@router.patch("/tasks/{task_id}")
+async def update_task(
+    task_id: int,
+    data: TaskUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Vazifani yangilash"""
+    service = AnalyticsService(db)
+    success = await service.update_task(task_id, **data.dict(exclude_unset=True))
+    if not success:
+        raise HTTPException(status_code=404, detail="Vazifa topilmadi")
+    return {"status": "success"}
 
 
 @router.get("/operators/{operator_id}")
@@ -284,6 +337,22 @@ async def get_conversations(
     return {"slow_responses": slow, "recent_messages": recent}
 
 
+@router.get("/conversations/{conversation_id}/history")
+async def get_conversation_history(
+    conversation_id: int,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Suhbat tarixi"""
+    service = AnalyticsService(db)
+    history = await service.get_conversation_history(conversation_id)
+    return {"history": history}
+
+
+# =====================================================
+# OPERATOR MANAGEMENT
+# =====================================================
+
 # =====================================================
 # OPERATOR MANAGEMENT
 # =====================================================
@@ -291,29 +360,13 @@ async def get_conversations(
 class OperatorAdd(BaseModel):
     username: str
 
-@router.get("/operators")
-async def get_operators(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    group_id: Optional[int] = Query(None),
-    db: AsyncSession = Depends(get_db),
-    _admin: dict = Depends(get_current_admin),
-):
-    """Barcha operatorlar ro'yxati"""
-    service = AnalyticsService(db)
-    return await service.get_all_operators(
-        date_from=parse_date(date_from),
-        date_to=parse_date(date_to),
-        group_id=group_id
-    )
-
 @router.post("/operators")
 async def add_operator(
     data: OperatorAdd,
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
-    """Yangi operator qo'shish"""
+    """Yangi operator qo'shish (username orqali)"""
     service = AnalyticsService(db)
     try:
         return await service.add_predefined_operator(data.username)

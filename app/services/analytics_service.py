@@ -8,13 +8,17 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.stats_repository import StatsRepository
+from app.repositories.task_repository import TaskRepository
+from app.models.models import Conversation, Message
 
 
 class AnalyticsService:
     """Statistika hisoblash va formatlash xizmati"""
 
     def __init__(self, db: AsyncSession):
+        self.db = db
         self.repo = StatsRepository(db)
+        self.task_repo = TaskRepository(db)
 
     # =====================================================
     # GROUPS
@@ -286,3 +290,82 @@ class AnalyticsService:
             text += f"• {name} — {wait_text} kutmoqda\n"
 
         return text + "━━━━━━━━━━━━━━━━━━"
+
+    # =====================================================
+    # CRM & TASKS (NEW)
+    # =====================================================
+
+    async def get_conversation_history(self, conversation_id: int) -> List[Dict]:
+        """Suhbatning to'liq tarixi (user + operator xabarlari)"""
+        from sqlalchemy import select
+        from sqlalchemy.orm import joinedload
+        
+        # Suhbatni topamiz
+        result = await self.db.execute(
+            select(Conversation).where(Conversation.id == conversation_id)
+        )
+        conv = result.scalar_one_or_none()
+        if not conv:
+            return []
+
+        # Suhbat diapazonidagi xabarlarni olamiz
+        end_time = conv.answered_at or datetime.utcnow()
+        start_time = conv.created_at - timedelta(hours=1)
+        
+        query = select(Message).options(joinedload(Message.user)).where(
+            Message.group_id == conv.group_id,
+            Message.date >= start_time,
+            Message.date <= end_time + timedelta(minutes=5)
+        ).order_by(Message.date.asc())
+        
+        msg_result = await self.db.execute(query)
+        messages = msg_result.scalars().all()
+        
+        return [
+            {
+                "id": m.id,
+                "text": m.text,
+                "date": m.date.isoformat(),
+                "is_from_operator": m.is_from_operator,
+                "user_name": m.user.full_name,
+                "user_id": m.user_id,
+                "telegram_message_id": m.telegram_message_id
+            } for m in messages
+        ]
+
+    async def get_tasks(self, group_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict]:
+        """Vazifalar ro'yxati"""
+        tasks = await self.task_repo.get_tasks(group_id=group_id, status=status)
+        return [
+            {
+                "id": t.id,
+                "title": t.title,
+                "description": t.description,
+                "status": t.status,
+                "priority": t.priority,
+                "user_name": t.user.full_name,
+                "group_title": t.group.title,
+                "operator_name": t.assigned_operator.full_name if t.assigned_operator else None,
+                "created_at": t.created_at.isoformat(),
+                "due_date": t.due_date.isoformat() if t.due_date else None
+            } for t in tasks
+        ]
+
+    async def create_task(self, data: Dict[str, Any], created_by_id: int) -> Dict:
+        """Yangi vazifa yaratish"""
+        task = await self.task_repo.create_task(
+            title=data["title"],
+            description=data.get("description", ""),
+            group_id=data["group_id"],
+            user_id=data["user_id"],
+            conversation_id=data.get("conversation_id"),
+            created_by_id=created_by_id,
+            priority=data.get("priority", "medium"),
+            due_date=datetime.fromisoformat(data["due_date"]) if data.get("due_date") else None
+        )
+        return {"id": task.id, "status": "ok"}
+
+    async def update_task(self, task_id: int, **kwargs) -> bool:
+        """Vazifani tahrirlash"""
+        task = await self.task_repo.update_task(task_id, **kwargs)
+        return task is not None

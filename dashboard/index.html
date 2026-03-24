@@ -33,6 +33,12 @@
                     <button class="nav-item active" data-view="overview">
                         <span class="icon">📊</span> Overview
                     </button>
+                    <button class="nav-item" data-view="tasks">
+                        <span class="icon">✅</span> Vazifalar
+                    </button>
+                    <button class="nav-item" data-view="history">
+                        <span class="icon">📜</span> Tarix
+                    </button>
                     <button class="nav-item" data-view="users">
                         <span class="icon">👥</span> Foydalanuvchilar
                     </button>
@@ -59,7 +65,13 @@
                 </div>
                 <div class="header-right">
                     <div class="filter-bar">
-                        <div class="group-filter" id="groupIcons">
+                        <div class="group-selector-container">
+                            <select id="groupSelector" class="group-dropdown">
+                                <option value="all">Barcha guruhlar</option>
+                                <!-- Guruhlar dinamik yuklanadi -->
+                            </select>
+                        </div>
+                        <div class="group-filter hidden" id="groupIcons">
                             <!-- Guruh iconlari dinamik yuklanadi -->
                         </div>
                         <button class="filter-btn" data-period="today">Bugun</button>
@@ -123,6 +135,49 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" id="cancelSettings">Bekor qilish</button>
                         <button type="submit" class="btn btn-primary">Saqlash</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- Task Modal -->
+    <div id="taskModal" class="modal-overlay hidden">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3>Yangi vazifa yaratish</h3>
+                <button class="modal-close" id="taskModalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="taskForm">
+                    <input type="hidden" id="taskConversationId">
+                    <input type="hidden" id="taskUserId">
+                    <input type="hidden" id="taskGroupId">
+
+                    <div class="form-group">
+                        <label>Sarlavha:</label>
+                        <input type="text" id="taskTitle" required placeholder="Vazifa nomi...">
+                    </div>
+                    <div class="form-group">
+                        <label>Tavsif:</label>
+                        <textarea id="taskDescription" rows="3" placeholder="Batafsil ma'lumot..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Prioritet:</label>
+                            <select id="taskPriority">
+                                <option value="low">Past</option>
+                                <option value="medium" selected>O'rta</option>
+                                <option value="high">Yuqori</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Muddati:</label>
+                            <input type="date" id="taskDueDate">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" id="taskCancel">Bekor qilish</button>
+                        <button type="submit" class="btn btn-primary">Yaratish</button>
                     </div>
                 </form>
             </div>

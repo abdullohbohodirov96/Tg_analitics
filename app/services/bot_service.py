@@ -96,53 +96,39 @@ class BotService:
             if reply_to_user and reply_to_user.get("id") != from_user.get("id"):
                 # Boshqa odamga javob berildi
                 reply_to_msg_id = reply_to.get("message_id")
-                conv = await self.repo.find_unanswered_conversation_by_message(
-                    group_id=group.id,
-                    user_message_id=reply_to_msg_id,
-                )
                 
-                # Agar suhbat topilsa yoki shunchaki o'sha userning javoblarini yopish kerak bo'lsa
-                target_user_id = None
-                if conv:
-                    target_user_id = conv.user_id
-                else:
-                    # Bazadan o'sha telegram_id li userni topamiz
-                    target_user = await self.repo.get_user_by_telegram_id(reply_to_user["id"])
-                    if target_user:
-                        target_user_id = target_user.id
-                
-                if target_user_id:
+                # O'sha userning bu guruhdagi barcha javobsiz xabarlarini yopamiz
+                target_user = await self.repo.get_user_by_telegram_id(reply_to_user["id"])
+                if target_user:
                     await self.repo.mark_user_conversations_answered(
-                        user_id=target_user_id,
+                        user_id=target_user.id,
                         group_id=group.id,
                         operator_id=user.id,
                         operator_reply_id=message["message_id"],
                         answered_at=datetime.utcfromtimestamp(message["date"]),
                     )
-                    # Javob bergan odamni "operator" (staff) deb belgilab qo'yamiz (statistika uchun)
+                    # Javob bergan odamni "operator" (staff) deb belgilab qo'yamiz
                     if not user.is_operator:
                         await self.repo.set_user_as_operator(user.id)
                     answered_someone = True
 
-        # 2. Hech qanday replysiz xabar yozilganda (agar biron user kutayotgan bo'lsa)
-        if not answered_someone:
-            # Agar bu odam avval "javob beruvchi" (operator) bo'lgan bo'lsa 
-            if user.is_operator:
-                # Eng eski javobsiz suhbatni topib yopamiz
-                oldest_conv = await self.repo.get_oldest_unanswered_conversation(group.id)
-                if oldest_conv and oldest_conv.user_id != user.id:
-                    await self.repo.mark_user_conversations_answered(
-                        user_id=oldest_conv.user_id,
-                        group_id=group.id,
-                        operator_id=user.id,
-                        operator_reply_id=message["message_id"],
-                        answered_at=datetime.utcfromtimestamp(message["date"]),
-                    )
-                    answered_someone = True
+        # 2. Hech qanday replysiz xabar yozilganda (agar bu odam operator bo'lsa)
+        if not answered_someone and user.is_operator:
+            # Eng eski javobsiz suhbatni topib yopamiz
+            oldest_conv = await self.repo.get_oldest_unanswered_conversation(group.id)
+            if oldest_conv and oldest_conv.user_id != user.id:
+                await self.repo.mark_user_conversations_answered(
+                    user_id=oldest_conv.user_id,
+                    group_id=group.id,
+                    operator_id=user.id,
+                    operator_reply_id=message["message_id"],
+                    answered_at=datetime.utcfromtimestamp(message["date"]),
+                )
+                answered_someone = True
 
         # Xabarni saqlash
         msg_date = datetime.utcfromtimestamp(message["date"])
-        await self.repo.save_message(
+        saved_msg = await self.repo.save_message(
             telegram_message_id=message["message_id"],
             group_id=group.id,
             user_id=user.id,
@@ -152,8 +138,13 @@ class BotService:
             is_from_operator=user.is_operator or answered_someone,
         )
 
-        # Agar bu kishining o'zi javob bermagan bo'lsa va bu oddiy xabar bo'lsa
-        if not answered_someone:
+        # 3. SMART TASK SUGGESTION (Vazifa taklif qilish)
+        # Agar user xabarida "vazifa", "tashlab bering", "qilib bering", "zakaz" kabi so'zlar bo'lsa
+        task_keywords = ["qilib", "tashlab", "berin", "zakaz", "muammo", "yordam", "kerak", "nechi"]
+        is_potential_task = any(kw in text.lower() for kw in task_keywords) and not user.is_operator
+        
+        # 4. Conversation ochish yoki davom ettirish
+        if not answered_someone and not user.is_operator:
             # O'zi uchun yangi suhbat ochish (agar hali ochilmagan bo'lsa)
             unanswered_conv = await self.repo.find_unanswered_conversation_by_user(
                 group_id=group.id,
@@ -165,6 +156,12 @@ class BotService:
                     user_id=user.id,
                     user_message_id=message["message_id"],
                 )
+            
+            # Agar bu potentsial vazifa bo'lsa - Dashboardda buni ko'rsatamiz (modal orqali)
+            # Hozircha shunchaki log qilamiz, UI da "Task Suggestion" sifatida ko'rinadi
+            if is_potential_task:
+                print(f"📌 Task suggested for user {user.id} in group {group.id}: {text[:50]}...")
+
 
     async def _handle_my_chat_member(self, chat_member_update: Dict[str, Any]):
         """Bot guruhga qo'shilganda yoki huquqlari o'zgarganda guruhni ro'yxatdan o'tkazish"""
@@ -255,7 +252,7 @@ class BotService:
     @staticmethod
     def _help_text() -> str:
         return (
-            "🤖 <b>Telegram Analytics Bot</b>\n\n"
+            "🤖 <b>Telegram Analytics & CRM Bot</b>\n\n"
             "Mavjud buyruqlar:\n"
             "━━━━━━━━━━━━━━━━━━\n"
             "/stats — Umumiy statistika\n"
@@ -264,6 +261,10 @@ class BotService:
             "/month — Oylik statistika\n"
             "/operators — Operatorlar natijasi\n"
             "/unanswered — Javobsiz foydalanuvchilar\n"
-            "/help — Yordam\n"
+            "/help — Yordam\n\n"
+            "<b>CRM Yangiliklari:</b>\n"
+            "✅ <b>Smart Tasks</b>: Bot xabarlardan vazifalarni aniqlaydi.\n"
+            "✅ <b>Multi-Group</b>: Har bir guruh uchun alohida analiz.\n"
+            "✅ <b>Conversation History</b>: Dashboardda to'liq tarix.\n"
             "━━━━━━━━━━━━━━━━━━"
         )

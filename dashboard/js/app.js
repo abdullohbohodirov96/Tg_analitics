@@ -63,6 +63,16 @@ const App = {
             themeBtn.addEventListener('click', () => this.toggleTheme());
         }
 
+        // Group Selector (New)
+        const groupSel = document.getElementById('groupSelector');
+        if (groupSel) {
+            groupSel.addEventListener('change', (e) => {
+                this.currentGroupId = e.target.value === 'all' ? '' : e.target.value;
+                this.renderGroupIcons(); // Sync icons
+                this.renderView();
+            });
+        }
+
         // Logout
         const logoutBtn = document.getElementById('logoutBtn');
         if (logoutBtn) {
@@ -105,6 +115,14 @@ const App = {
                 overlay.classList.remove('show');
             });
         }
+
+        // Task Form
+        document.getElementById('taskForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.createTask();
+        });
+        document.getElementById('taskModalClose')?.addEventListener('click', () => this.closeTaskModal());
+        document.getElementById('taskCancel')?.addEventListener('click', () => this.closeTaskModal());
     },
 
     /** ===== NAVIGATION ===== */
@@ -120,6 +138,8 @@ const App = {
         // Header title yangilash
         const titles = {
             overview: '📊 Overview',
+            tasks: '✅ Vazifalar',
+            history: '📜 Suhbatlar tarixi',
             operators: '👨‍💼 Operatorlar',
             users: '👥 Foydalanuvchilar',
             'operator-detail': '👨‍💼 Operator ma\'lumotlari',
@@ -139,6 +159,12 @@ const App = {
         switch (this.currentView) {
             case 'overview':
                 await this.renderOverview(content);
+                break;
+            case 'tasks':
+                await this.renderTasks(content);
+                break;
+            case 'history':
+                await this.renderHistory(content);
                 break;
             case 'operators':
                 await this.renderOperators(content);
@@ -225,10 +251,22 @@ const App = {
             if (data) {
                 this.groups = data;
                 this.renderGroupIcons();
+                this.renderGroupSelector(); // Filter dropdown
             }
         } catch (e) {
             console.error("Gruppalarni yuklashda xato:", e);
         }
+    },
+
+    renderGroupSelector() {
+        const select = document.getElementById('groupSelector');
+        if (!select) return;
+
+        let html = '<option value="all">Barcha guruhlar</option>';
+        this.groups.forEach(g => {
+            html += `<option value="${g.id}" ${this.currentGroupId == g.id ? 'selected' : ''}>${this.escapeHtml(g.custom_title || g.title)}</option>`;
+        });
+        select.innerHTML = html;
     },
 
     renderGroupIcons() {
@@ -336,7 +374,7 @@ const App = {
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon blue">📨</div>
-                    <div class="stat-label">Jami xabarlar</div>
+                    <div class="stat-label">Xabarlar</div>
                     <div class="stat-value">${this.formatNumber(overview.total_messages)}</div>
                 </div>
                 <div class="stat-card">
@@ -345,42 +383,37 @@ const App = {
                     <div class="stat-value">${this.formatNumber(overview.unique_users)}</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon yellow">⏱</div>
-                    <div class="stat-label">Javob vaqti (o'rtacha)</div>
+                    <div class="stat-icon yellow">✅</div>
+                    <div class="stat-label">Javob darajasi</div>
+                    <div class="stat-value">${overview.response_rate}%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon orange">⏱</div>
+                    <div class="stat-label">O'rtacha javob</div>
                     <div class="stat-value">${this.formatTime(overview.avg_response_time)}</div>
                 </div>
             </div>
 
-            <!-- Main State Units -->
-            <div class="tables-grid" style="grid-template-columns: 1fr 1fr; margin-top:24px; gap:24px">
-                <!-- Unit 1: Unanswered -->
-                <div class="table-card" style="border-top: 4px solid var(--danger); min-height:400px">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
-                        <h2 style="margin:0"><span class="icon" style="background:var(--danger-soft); color:var(--danger); padding:8px; border-radius:12px; margin-right:8px">❌</span> Javob berilmaganlar</h2>
-                        <div class="badge danger" style="font-size:1.2rem; padding:8px 16px">${this.formatNumber(overview.unanswered_users)}</div>
+            <div class="tables-grid">
+                <div class="table-card">
+                    <div class="card-header">
+                        <h3><span class="icon">❌</span> Javob kutayotganlar</h3>
+                        <span class="badge danger">${overview.unanswered_users}</span>
                     </div>
-                    ${this.renderUnansweredTable(unanswered?.unanswered || [])}
+                    ${this.renderConversationsTable(unanswered?.unanswered || [], 'unanswered')}
                 </div>
-
-                <!-- Unit 2: Answered -->
-                <div class="table-card" style="border-top: 4px solid var(--success); min-height:400px">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
-                        <h2 style="margin:0"><span class="icon" style="background:var(--success-soft); color:var(--success); padding:8px; border-radius:12px; margin-right:8px">✅</span> Javob berilganlar</h2>
-                        <div class="badge success" style="font-size:1.2rem; padding:8px 16px">${overview.response_rate}%</div>
+                <div class="table-card">
+                    <div class="card-header">
+                        <h3><span class="icon">✅</span> Yaqinda yopilganlar</h3>
                     </div>
-                    ${this.renderRecentMessagesTable((answered?.recent_messages || []).filter(m => m.is_answered))}
+                    ${this.renderConversationsTable(answered?.recent_messages || [], 'answered')}
                 </div>
             </div>
 
-            <!-- Charts & Recent Activity -->
-            <div class="charts-grid" style="margin-top:24px">
-                <div class="chart-card">
-                    <h3><span class="icon">📈</span> Kunlik xabarlar</h3>
-                    <div class="chart-container"><canvas id="dailyMessagesChart"></canvas></div>
-                </div>
+            <div class="charts-grid">
                 <div class="chart-card full-width">
-                    <h3><span class="icon">💬</span> Barcha so'nggi xabarlar</h3>
-                    ${this.renderRecentMessagesTable(answered?.recent_messages || [])}
+                    <h3><span class="icon">📈</span> Aktivlik trendi</h3>
+                    <div class="chart-container"><canvas id="dailyMessagesChart"></canvas></div>
                 </div>
             </div>
         `;
@@ -571,27 +604,34 @@ const App = {
         `;
     },
 
-    renderUsersTable(users) {
-        if (!users.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
+    renderConversationsTable(items, type) {
+        if (!items.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
         return `
             <div style="overflow-x:auto">
                 <table class="data-table">
-                    <thead><tr><th>#</th><th>Foydalanuvchi</th><th>Xabarlar</th><th>Amal</th></tr></thead>
+                    <thead><tr><th>Foydalanuvchi</th><th>Xabar</th><th>Amal</th></tr></thead>
                     <tbody>
-                        ${users.slice(0, 50).map((u, i) => `
+                        ${items.slice(0, 10).map(item => `
                             <tr>
-                                <td>${i + 1}</td>
                                 <td>
                                     <div class="user-name">
-                                        <div class="avatar">${(u.name || '?')[0].toUpperCase()}</div>
+                                        <div class="avatar">${(item.name || '?')[0].toUpperCase()}</div>
                                         <div>
-                                            <div style="font-weight:600">${this.escapeHtml(u.name)}</div>
-                                            <div style="font-size:11px;color:var(--text-muted)">${u.username ? '@' + u.username : ''}</div>
+                                            <div style="font-weight:600">${this.escapeHtml(item.name)}</div>
+                                            <div style="font-size:10px;color:var(--text-muted)">${item.username ? '@' + item.username : ''}</div>
                                         </div>
                                     </div>
                                 </td>
-                                <td><strong>${u.message_count}</strong></td>
-                                <td><button class="filter-btn" onclick="App.navigate('user-detail',{id:${u.id}})">Batafsil</button></td>
+                                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                                    <div style="font-size:12px">${this.escapeHtml(item.message_text || item.text || '(media)')}</div>
+                                    <div style="font-size:10px;color:var(--text-muted)">${this.formatDate(item.created_at || item.date)}</div>
+                                </td>
+                                <td>
+                                    <div style="display:flex;gap:4px">
+                                        <button class="btn-icon" onclick="App.openChatHistoryModal(${item.id})" title="Tarix">📜</button>
+                                        <button class="btn-icon" onclick="App.openTaskModal('${item.group_telegram_id || ''}', ${item.user_telegram_id || item.user_id}, ${item.id})" title="Vazifa qo'shish">✅</button>
+                                    </div>
+                                </td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -673,10 +713,164 @@ const App = {
         if (btn) btn.innerHTML = saved === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
     },
 
-    formatNumber(n) {
-        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-        if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-        return (n || 0).toString();
+    /** ===== TASKS PAGE ===== */
+    async renderTasks(container) {
+        const q = this.getQueryParams();
+        const data = await Auth.fetch(`/api/stats/tasks${q}`);
+        if (!data) return;
+
+        const tasks = data.tasks || [];
+        const statuses = {
+            new: { title: 'Yangi', color: 'blue' },
+            in_progress: { title: 'Jarayonda', color: 'orange' },
+            done: { title: 'Bajarildi', color: 'green' }
+        };
+
+        let html = `
+            <div class="tasks-board">
+                ${Object.entries(statuses).map(([status, info]) => `
+                    <div class="task-column">
+                        <div class="column-header">
+                            <h3>${info.title}</h3>
+                            <span class="badge ${info.color}">${tasks.filter(t => t.status === status).length}</span>
+                        </div>
+                        <div class="task-cards">
+                            ${tasks.filter(t => t.status === status).map(task => `
+                                <div class="task-card-item priority-${task.priority}">
+                                    <div class="task-header">
+                                        <h4>${this.escapeHtml(task.title)}</h4>
+                                        <span class="priority-dot"></span>
+                                    </div>
+                                    <p>${this.escapeHtml(task.description || '')}</p>
+                                    <div class="task-footer">
+                                        <div class="task-user">👤 ${this.escapeHtml(task.user_name)}</div>
+                                        <div class="task-date">📅 ${task.due_date ? this.formatDate(task.due_date).split(' ')[0] : 'No date'}</div>
+                                    </div>
+                                    <div class="task-actions">
+                                        ${status !== 'done' ? `<button onclick="App.updateTaskStatus(${task.id}, 'done')">✅ Bajarildi</button>` : ''}
+                                        ${status === 'new' ? `<button onclick="App.updateTaskStatus(${task.id}, 'in_progress')">⏳ Boshlash</button>` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        container.innerHTML = html;
+    },
+
+    /** ===== HISTORY PAGE ===== */
+    async renderHistory(container) {
+        const q = this.getQueryParams();
+        const data = await Auth.fetch(`/api/stats/answered${q}`);
+        if (!data) return;
+
+        container.innerHTML = `
+            <div class="table-card full-width">
+                <h3><span class="icon">📜</span> Yopilgan suhbatlar</h3>
+                ${this.renderConversationsTable(data.answered || [], 'history')}
+            </div>
+        `;
+    },
+
+    /** ===== TASK MODAL LOGIC ===== */
+    openTaskModal(chatId, userId, conversationId) {
+        const modal = document.getElementById('taskModal');
+        modal.classList.remove('hidden');
+
+        document.getElementById('taskConversationId').value = conversationId || '';
+        document.getElementById('taskUserId').value = userId || '';
+        document.getElementById('taskGroupId').value = this.currentGroupId || '';
+
+        document.getElementById('taskForm').reset();
+    },
+
+    closeTaskModal() {
+        document.getElementById('taskModal').classList.add('hidden');
+    },
+
+    async createTask() {
+        const data = {
+            title: document.getElementById('taskTitle').value,
+            description: document.getElementById('taskDescription').value,
+            priority: document.getElementById('taskPriority').value,
+            due_date: document.getElementById('taskDueDate').value,
+            user_id: parseInt(document.getElementById('taskUserId').value),
+            group_id: parseInt(document.getElementById('taskGroupId').value) || (this.groups[0]?.id),
+            conversation_id: document.getElementById('taskConversationId').value ? parseInt(document.getElementById('taskConversationId').value) : null
+        };
+
+        try {
+            const res = await Auth.fetch('/api/stats/tasks', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            if (res) {
+                this.closeTaskModal();
+                if (this.currentView === 'tasks') this.renderTasks(document.getElementById('pageContent'));
+                else this.renderView();
+            }
+        } catch (e) {
+            alert('Vazifa yaratishda xato');
+        }
+    },
+
+    async updateTaskStatus(taskId, status) {
+        try {
+            await Auth.fetch(`/api/stats/tasks/${taskId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status })
+            });
+            this.renderView();
+        } catch (e) {
+            alert('Xatolik yuz berdi');
+        }
+    },
+
+    /** ===== CONVERSATION HISTORY MODAL ===== */
+    async openChatHistoryModal(conversationId) {
+        const modal = document.getElementById('chatModal');
+        const title = document.getElementById('chatModalTitle');
+        const content = document.getElementById('chatModalContent');
+        const loading = document.getElementById('chatModalLoading');
+
+        modal.classList.remove('hidden');
+        loading.classList.remove('hidden');
+        content.innerHTML = '';
+        title.textContent = '📜 Suhbat tarixi';
+
+        try {
+            const data = await Auth.fetch(`/api/stats/conversations/${conversationId}/history`);
+            loading.classList.add('hidden');
+
+            const history = data.history || [];
+            if (history.length === 0) {
+                content.innerHTML = '<div class="empty-state"><p>Tarix topilmadi</p></div>';
+                return;
+            }
+
+            content.innerHTML = `
+                <div class="chat-history-container">
+                    ${history.map(m => `
+                        <div class="chat-bubble ${m.is_from_operator ? 'operator' : 'user'}">
+                            <div class="bubble-header">
+                                <strong>${this.escapeHtml(m.user_name)}</strong>
+                                <span>${this.formatDate(m.date).split(' ')[1]}</span>
+                            </div>
+                            <div class="bubble-text">${this.escapeHtml(m.text || '(media)')}</div>
+                        </div>
+                    `).join('')}
+                    <div style="margin-top:20px; text-align:center">
+                        <a href="https://t.me/c/${history[0]?.group_id || ''}/${history[0]?.telegram_message_id}" 
+                           target="_blank" class="btn btn-primary">Telegramda ochish ↗️</a>
+                    </div>
+                </div>
+            `;
+        } catch (e) {
+            loading.classList.add('hidden');
+            content.innerHTML = '<p class="error">Xatolik yuz berdi</p>';
+        }
     },
 };
 

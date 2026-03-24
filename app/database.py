@@ -52,6 +52,9 @@ from sqlalchemy import text
 
 async def create_tables():
     """Barcha jadvallarni yaratish (development uchun) va yangi columnlarni qo'shish"""
+    # Modellarni import qilish create_all dan oldin
+    from app.models import models
+    
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         

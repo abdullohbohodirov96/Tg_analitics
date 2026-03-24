@@ -156,6 +156,40 @@ class PredefinedOperator(Base):
         return f"<PredefinedOperator(username={self.username})>"
 
 
+class Task(Base):
+    """
+    Vazifalar (Task) jadvali.
+    Foydalanuvchi so'rovlarini vazifa sifatida saqlash uchun.
+    """
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(50), default="new", index=True) # new, in_progress, done, cancelled, overdue
+    priority = Column(String(50), default="medium", index=True) # low, medium, high
+    
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True) # Mijoz
+    assigned_operator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    due_date = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    group = relationship("Group")
+    conversation = relationship("Conversation")
+    user = relationship("User", foreign_keys=[user_id])
+    assigned_operator = relationship("User", foreign_keys=[assigned_operator_id])
+    creator = relationship("User", foreign_keys=[created_by_id])
+
+    def __repr__(self):
+        return f"<Task(id={self.id}, title={self.title}, status={self.status})>"
+
+
 class AdminUser(Base):
     """Dashboard admin foydalanuvchilari"""
     __tablename__ = "admin_users"
