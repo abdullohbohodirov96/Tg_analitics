@@ -50,37 +50,21 @@ const Auth = {
         }
 
         try {
-            const response = await fetch(url, { ...options, headers, timeout: 30000 });
+            const response = await fetch(url, { ...options, headers });
 
             if (response.status === 401) {
-                console.error('Unauthorized - logging out');
                 this.logout();
                 return null;
             }
 
             if (!response.ok) {
-                const error = await response.text();
-                console.error(`API Error ${response.status} (${url}): ${error}`);
-                // Return empty data structure based on endpoint
-                if (url.includes('/tasks')) return { tasks: [] };
-                if (url.includes('/history')) return { history_feed: [] };
-                if (url.includes('/conversations')) return { unanswered: [], recent_messages: [] };
-                if (url.includes('/users')) return { users: [] };
-                if (url.includes('/operators')) return { active: [], predefined: [] };
+                console.error(`API Error: ${response.status} ${url}`);
                 return null;
             }
 
-            const data = await response.json();
-            console.log(`API Success (${url}):`, data);
-            return data || {};
+            return await response.json();
         } catch (error) {
-            console.error(`Fetch error (${url}):`, error);
-            // Return empty data structure to prevent loading spinner
-            if (url.includes('/tasks')) return { tasks: [] };
-            if (url.includes('/history')) return { history_feed: [] };
-            if (url.includes('/conversations')) return { unanswered: [], recent_messages: [] };
-            if (url.includes('/users')) return { users: [] };
-            if (url.includes('/operators')) return { active: [], predefined: [] };
+            console.error(`Fetch exception (${url}):`, error);
             return null;
         }
     },
