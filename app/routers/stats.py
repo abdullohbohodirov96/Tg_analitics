@@ -223,7 +223,10 @@ async def create_task(
 ):
     """Yangi vazifa yaratish"""
     service = AnalyticsService(db)
-    return await service.create_task(data.dict(), created_by_id=admin["id"])
+    admin_id = admin.get("admin_id") or admin.get("sub")
+    if not admin_id:
+        raise HTTPException(status_code=401, detail="Admin identifikatsiyasi berilmadi")
+    return await service.create_task(data.dict(), created_by_id=int(admin_id) if isinstance(admin_id, str) else admin_id)
 
 class TaskUpdate(BaseModel):
     status: Optional[str] = None

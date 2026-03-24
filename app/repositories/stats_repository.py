@@ -6,11 +6,11 @@ Service layer faqat shu repository orqali DB ga murojaat qiladi.
 
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
-from sqlalchemy import select, func, case, and_, extract, text, desc, literal
+from sqlalchemy import select, func, case, and_, extract, text, desc, literal, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.models.models import Group, User, Message, Conversation, AdminUser, PredefinedOperator
+from app.models.models import Group, User, Message, Conversation, AdminUser, PredefinedOperator, Task
 
 
 class StatsRepository:
@@ -617,7 +617,6 @@ class StatsRepository:
         limit: int = 50, group_id: Optional[int] = None
     ) -> List[Dict]:
         """Barcha harakatlar tarixi: xabarlar va bajarilgan vazifalar"""
-        from sqlalchemy import union_all
         
         # 1. Bajarilgan vazifalar
         task_query = select(

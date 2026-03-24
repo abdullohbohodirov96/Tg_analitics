@@ -297,63 +297,88 @@ class AnalyticsService:
 
     async def get_conversation_history(self, conversation_id: int) -> List[Dict]:
         """Suhbatning to'liq tarixi (user + operator xabarlari)"""
-        from sqlalchemy import select
-        from sqlalchemy.orm import joinedload
-        
-        # Suhbatni topamiz
-        result = await self.db.execute(
-            select(Conversation).options(joinedload(Conversation.group)).where(Conversation.id == conversation_id)
-        )
-        conv = result.scalar_one_or_none()
-        if not conv:
-            return []
+        try:
+            from sqlalchemy import select
+            from sqlalchemy.orm import joinedload
+            
+            # Suhbatni topamiz
+            result = await self.db.execute(
+                select(Conversation).options(joinedload(Conversation.group)).where(Conversation.id == conversation_id)
+            )
+            conv = result.scalar_one_or_none()
+            if not conv:
+                return []
 
-        # Suhbat diapazonidagi xabarlarni olamiz
-        end_time = conv.answered_at or datetime.utcnow()
-        start_time = conv.created_at - timedelta(hours=1)
-        
-        query = select(Message).options(joinedload(Message.user)).where(
-            Message.group_id == conv.group_id,
-            Message.date >= start_time,
-            Message.date <= end_time + timedelta(minutes=5)
-        ).order_by(Message.date.asc())
-        
-        msg_result = await self.db.execute(query)
-        messages = msg_result.scalars().all()
-        
-        return [
-            {
-                "id": m.id,
-                "text": m.text,
-                "date": m.date.isoformat(),
-                "is_from_operator": m.is_from_operator,
-                "user_name": m.user.full_name,
-                "user_id": m.user_id,
-                "telegram_message_id": m.telegram_message_id,
-                "group_telegram_id": str(conv.group.telegram_id).replace("-100", "") if str(conv.group.telegram_id).startswith("-100") else conv.group.telegram_id
-            } for m in messages
-        ]
+            # Suhbat diapazonidagi xabarlarni olamiz
+            end_time = conv.answered_at or datetime.utcnow()
+            start_time = conv.created_at - timedelta(hours=1)
+            
+            query = select(Message).options(joinedload(Message.user)).where(
+                Message.group_id == conv.group_id,
+                Message.date >= start_time,
+                Message.date <= end_time + timedelta(minutes=5)
+            ).order_by(Message.date.asc())
+            
+            msg_result = await self.db.execute(query)
+            messages = msg_result.scalars().all()
+            
+            return [
+                {
+                    "id": m.id,
+                    "text": m.text or "(media)",
+                    "date": m.date.isoformat() if m.date else datetime.utcnow().isoformat(),
+                    "is_from_operator": m.is_from_operator,
+                    "user_name": (m.user.full_name if m.user else "Unknown"),
+                    "user_id": m.user_id,
+                    "telegram_message_id": m.telegram_message_id,
+                    "group_telegram_id": str(conv.group.telegram_id).replace("-100", "") if str(conv.group.telegram_id).startswith("-100") else conv.group.telegram_id
+                } for m in messages
+            ]
+        except Exception as e:
+            print(f"Error in get_conversation_history: {e}")
+            return []
 
     async def get_tasks(self, group_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict]:
         """Vazifalar ro'yxati"""
-        tasks = await self.task_repo.get_tasks(group_id=group_id, status=status)
-        return [
-            {
-                "id": t.id,
-                "title": t.title,
-                "description": t.description,
-                "status": t.status,
-                "priority": t.priority,
-                "user_name": t.user.full_name,
-                "group_title": t.group.title,
-                "operator_name": t.assigned_operator.full_name if t.assigned_operator else None,
-                "created_at": t.created_at.isoformat(),
-                "due_date": t.due_date.isoformat() if t.due_date else None
-            } for t in tasks
-        ]
+        try:
+            tasks = await self.task_repo.get_tasks(group_id=group_id, status=status)
+            return [
+                {
+                    "id": t.id,
+                    "title": t.title or "Nomi yo'q",
+                    "description": t.description or "",
+                    "status": t.status or "new",
+                    "priority": t.priority or "medium",
+                    "user_name": (t.user.full_name if t.user else "Unknown"),
+                    "group_title": (t.group.title if t.group else "Unknown"),
+                    "operator_name": t.assigned_operator.full_name if t.assigned_operator else None,
+                    "created_at": t.created_at.isoformat() if t.created_at else datetime.utcnow().isoformat(),
+                    "due_date": t.due_date.isoformat() if t.due_date else None
+                } for t in tasks
+            ]
+        except Exception as e:
+            print(f"Error in get_tasks: {e}")
+            return []
 
     async def get_history_feed(self, date_from, date_to, group_id: Optional[int] = None):
-        return await self.repo.get_history_feed(date_from, date_to, group_id=group_id)
+        """Barcha harakatlar tarixi"""
+        try:
+            feed = await self.repo.get_history_feed(date_from, date_to, group_id=group_id)
+            # Make sure each item has required fields
+            validated_feed = []
+            for item in (feed or []):
+                validated_feed.append({
+                    "id": item.get("id", 0),
+                    "title": item.get("title", "No title"),
+                    "date": item.get("event_date") or item.get("date", datetime.utcnow().isoformat()),
+                    "type": item.get("type", "unknown"),
+                    "user_name": item.get("user_name", "Unknown"),
+                    "group_title": item.get("group_title", "Unknown"),
+                })
+            return validated_feed
+        except Exception as e:
+            print(f"Error in get_history_feed: {e}")
+            return []
 
     async def create_task(self, data: Dict[str, Any], created_by_id: int) -> Dict:
         """Yangi vazifa yaratish"""

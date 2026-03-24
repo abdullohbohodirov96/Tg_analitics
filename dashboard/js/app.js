@@ -145,8 +145,9 @@ const App = {
             overview: '📊 Overview',
             tasks: '✅ Vazifalar',
             history: '📜 Suhbatlar tarixi',
+            groups: '👥 Guruhlar',
+            users: '👤 Foydalanuvchilar',
             operators: '👨‍💼 Operatorlar',
-            users: '👥 Foydalanuvchilar',
             'operator-detail': '👨‍💼 Operator ma\'lumotlari',
             'user-detail': '👤 Foydalanuvchi ma\'lumotlari',
         };
@@ -154,6 +155,18 @@ const App = {
 
         // Sahifani ko'rsatish
         this.renderView();
+    },
+
+    // ===== HELPER: Get view list =====
+    getViewList() {
+        return [
+            { id: 'overview', title: '📊 Overview', icon: 'graph' },
+            { id: 'tasks', title: '✅ Vazifalar', icon: 'tasks' },
+            { id: 'history', title: '📜 Tarix', icon: 'history' },
+            { id: 'groups', title: '👥 Guruhlar', icon: 'groups' },
+            { id: 'users', title: '👤 Foydalanuvchilar', icon: 'users' },
+            { id: 'operators', title: '👨‍💼 Operatorlar', icon: 'operators' }
+        ];
     },
 
     /** Sahifani chizish */
@@ -170,6 +183,9 @@ const App = {
                 break;
             case 'history':
                 await this.renderHistory(content);
+                break;
+            case 'groups':
+                await this.renderGroups(content);
                 break;
             case 'operators':
                 await this.renderOperators(content);
@@ -253,13 +269,18 @@ const App = {
     async loadGroups() {
         try {
             const data = await Auth.fetch('/api/stats/groups');
-            if (data) {
+            console.log("Groups loaded:", data);
+            if (data && Array.isArray(data)) {
                 this.groups = data;
                 this.renderGroupIcons();
-                this.renderGroupSelector(); // Filter dropdown
+                this.renderGroupSelector();
+            } else {
+                console.warn("Groups data is not an array:", data);
+                this.groups = [];
             }
         } catch (e) {
             console.error("Gruppalarni yuklashda xato:", e);
+            this.groups = [];
         }
     },
 
@@ -504,6 +525,128 @@ const App = {
         `;
     },
 
+    /** ===== GROUPS PAGE ===== */
+    async renderGroups(container) {
+        try {
+            if (this.groups.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>Guruhlar topilmadi. Bot hali guruhga qo\'shilmagan bo\'lishi mumkin.</p></div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="table-card full-width">
+                    <h3><span class="icon">👥</span> Barcha guruhlar</h3>
+                    <div style="overflow-x:auto">
+                        <table class="data-table">
+                            <thead><tr><th>#</th><th>Guruh nomi</th><th>ID</th><th>Havola</th></tr></thead>
+                            <tbody>
+                                ${this.groups.map((g, i) => `
+                                    <tr style="cursor:pointer" onclick="App.editGroupSettings(${g.id})">
+                                        <td>${i + 1}</td>
+                                        <td><strong>${this.escapeHtml(g.custom_title || g.title || 'Unknown')}</strong></td>
+                                        <td style="font-size:12px; font-family:monospace">${g.telegram_id}</td>
+                                        <td><a href="${g.group_link || '#'}" target="_blank">${g.group_link ? '🔗' : '-'}</a></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            console.error('Groups render error:', error);
+            container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
+        }
+    },
+
+    editGroupSettings(groupId) {
+        const group = this.groups.find(g => g.id === groupId);
+        if (!group) return;
+
+        document.getElementById('editGroupId').value = group.id;
+        document.getElementById('customGroupTitle').value = group.custom_title || group.title || '';
+        document.getElementById('groupLink').value = group.group_link || '';
+        
+        const modal = document.getElementById('groupSettingsModal');
+        if (modal) modal.style.display = 'block';
+    },
+
+    /** ===== OPERATORS PAGE ===== */
+    async renderOperators(container) {
+        try {
+            const q = this.getQueryParams();
+            const data = await Auth.fetch(`/api/stats/operators${q}`);
+            
+            if (!data) {
+                container.innerHTML = '<div class="empty-state"><p>Operatorlar yuklanmadi. API xatosi.</p></div>';
+                return;
+            }
+
+            const operators = (data.active || []).concat(data.predefined || []);
+            if (operators.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>Operatorlar topilmadi</p></div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="table-card full-width">
+                    <h3><span class="icon">👨‍💼</span> Barcha operatorlar</h3>
+                    ${this.renderOperatorsTable(operators)}
+                </div>
+            `;
+        } catch (error) {
+            console.error('Operators render error:', error);
+            container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
+        }
+    },
+
+    /** ===== OPERATOR DETAIL PAGE ===== */
+    async renderOperatorDetail(container) {
+        try {
+            const data = await Auth.fetch(`/api/stats/operators/${this.params.id}`);
+            if (!data) {
+                container.innerHTML = '<div class="empty-state"><div class="icon">❌</div><p>Operator topilmadi</p></div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <button class="back-btn" onclick="App.navigate('operators')">← Orqaga</button>
+                <div class="detail-header">
+                    <div class="detail-avatar">${(data.name || '?')[0].toUpperCase()}</div>
+                    <div class="detail-info">
+                        <h2>${data.name || 'Unknown'}</h2>
+                        <p>${data.username ? '@' + data.username : 'Username yo\'q'}</p>
+                    </div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon blue">💬</div>
+                        <div class="stat-label">Javoblar soni</div>
+                        <div class="stat-value">${data.total_replies || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon green">⏱</div>
+                        <div class="stat-label">O'rtacha javob</div>
+                        <div class="stat-value">${this.formatTime(data.avg_response_time || 0)}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon yellow">👥</div>
+                        <div class="stat-label">Javob berilgan user</div>
+                        <div class="stat-value">${data.answered_users || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon orange">📊</div>
+                        <div class="stat-label">Faol status</div>
+                        <div class="stat-value"><span class="badge success">✅ Faol</span></div>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            console.error('Operator detail render error:', error);
+            container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
+        }
+    },
+
     /** ===== TABLE RENDERERS ===== */
 
     renderUsersTable(users) {
@@ -736,9 +879,18 @@ const App = {
         try {
             const q = this.getQueryParams();
             const data = await Auth.fetch(`/api/stats/tasks${q}`);
-            if (!data) throw new Error('Vazifalar yuklanmadi');
+            
+            if (!data || !data.tasks) {
+                container.innerHTML = '<div class="empty-state"><p>Vazifalar yuklanmadi. API xatosi.</p></div>';
+                return;
+            }
 
             const tasks = data.tasks || [];
+            if (tasks.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>✅ Vazifalar yo\'q</p></div>';
+                return;
+            }
+
             const statuses = {
                 new: { title: 'Yangi', color: 'blue' },
                 in_progress: { title: 'Jarayonda', color: 'orange' },
@@ -755,15 +907,15 @@ const App = {
                             </div>
                             <div class="task-cards">
                                 ${tasks.filter(t => t.status === status).map(task => `
-                                    <div class="task-card-item priority-${task.priority}">
+                                    <div class="task-card-item priority-${task.priority || 'medium'}">
                                         <div class="task-header">
-                                            <h4>${this.escapeHtml(task.title)}</h4>
+                                            <h4>${this.escapeHtml(task.title || 'Nomi yo\'q')}</h4>
                                             <span class="priority-dot"></span>
                                         </div>
                                         <p>${this.escapeHtml(task.description || '')}</p>
                                         <div class="task-footer">
-                                            <div class="task-user">👤 ${this.escapeHtml(task.user_name)}</div>
-                                            <div class="task-date">📅 ${task.due_date ? this.formatDate(task.due_date).split(' ')[0] : 'No date'}</div>
+                                            <div class="task-user">👤 ${this.escapeHtml(task.user_name || 'Unknown')}</div>
+                                            <div class="task-date">📅 ${task.due_date ? this.formatDate(task.due_date).split(' ')[0] : 'Sana yo\'q'}</div>
                                         </div>
                                         <div class="task-actions">
                                             ${status !== 'done' ? `<button onclick="App.updateTaskStatus(${task.id}, 'done')">✅ Bajarildi</button>` : ''}
@@ -778,6 +930,7 @@ const App = {
             `;
             container.innerHTML = html;
         } catch (error) {
+            console.error('Task render error:', error);
             container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
         }
     },
@@ -787,7 +940,11 @@ const App = {
         try {
             const q = this.getQueryParams();
             const data = await Auth.fetch(`/api/stats/history-feed${q}`);
-            if (!data) throw new Error('Tarix yuklanmadi');
+            
+            if (!data || !data.history_feed) {
+                container.innerHTML = '<div class="empty-state"><p>Tarix yuklanmadi. API xatosi.</p></div>';
+                return;
+            }
 
             container.innerHTML = `
                 <div class="table-card full-width">
@@ -796,6 +953,7 @@ const App = {
                 </div>
             `;
         } catch (error) {
+            console.error('History render error:', error);
             container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
         }
     },
