@@ -526,6 +526,77 @@ const App = {
         `;
     },
 
+    /** ===== OPERATORS PAGE ===== */
+    async renderOperators(container) {
+        try {
+            const q = this.getQueryParams();
+            const data = await Auth.fetch(`/api/stats/operators${q}`);
+            
+            if (!data) {
+                container.innerHTML = '<div class="empty-state"><p>Operatorlar yuklanmadi</p></div>';
+                return;
+            }
+
+            const operators = (data.active || []).concat(data.predefined || []);
+            if (operators.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>Operatorlar topilmadi</p></div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="table-card full-width">
+                    <h3><span class="icon">👨‍💼</span> Barcha operatorlar</h3>
+                    ${this.renderOperatorsTable(operators)}
+                </div>
+            `;
+        } catch (error) {
+            container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
+        }
+    },
+
+    /** ===== OPERATOR DETAIL PAGE ===== */
+    async renderOperatorDetail(container) {
+        try {
+            const data = await Auth.fetch(`/api/stats/operators/${this.params.id}`);
+            if (!data) {
+                container.innerHTML = '<div class="empty-state"><div class="icon">❌</div><p>Operator topilmadi</p></div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <button class="back-btn" onclick="App.navigate('operators')">← Orqaga</button>
+                <div class="detail-header">
+                    <div class="detail-avatar">${(data.name || '?')[0].toUpperCase()}</div>
+                    <div class="detail-info">
+                        <h2>${data.name || 'Unknown'}</h2>
+                        <p>${data.username ? '@' + data.username : 'Username yo\'q'}</p>
+                    </div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon blue">💬</div>
+                        <div class="stat-label">Javoblar soni</div>
+                        <div class="stat-value">${data.total_replies || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon green">⏱</div>
+                        <div class="stat-label">O'rtacha javob</div>
+                        <div class="stat-value">${this.formatTime(data.avg_response_time || 0)}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon yellow">👥</div>
+                        <div class="stat-label">Javob berilgan user</div>
+                        <div class="stat-value">${data.answered_users || 0}</div>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
+        }
+    },
+
+    /** ===== TABLE RENDERERS ===== */
+
     renderOperatorsTable(operators) {
         if (!operators.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
         return `
