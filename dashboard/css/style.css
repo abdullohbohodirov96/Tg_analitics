@@ -1395,3 +1395,19 @@ button {
         grid-template-columns: 1fr;
     }
 }
+/* Activity Feed Badges */
+.activity-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.badge-success { background: rgba(72, 187, 120, 0.2); color: #48bb78; }
+.badge-primary { background: rgba(66, 153, 225, 0.2); color: #4299e1; }
+.badge-warning { background: rgba(237, 137, 54, 0.2); color: #ed8936; }
+.badge-info { background: rgba(56, 178, 172, 0.2); color: #38b2ac; }
+.badge-secondary { background: rgba(160, 174, 192, 0.2); color: #a0aec0; }

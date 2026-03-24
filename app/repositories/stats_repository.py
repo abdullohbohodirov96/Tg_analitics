@@ -6,7 +6,7 @@ Service layer faqat shu repository orqali DB ga murojaat qiladi.
 
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
-from sqlalchemy import select, func, case, and_, extract, text
+from sqlalchemy import select, func, case, and_, extract, text, desc, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -524,6 +524,7 @@ class StatsRepository:
                 Conversation.id,
                 Conversation.created_at,
                 Conversation.user_message_id,
+                Conversation.group_id,
                 User.telegram_id,
                 User.username,
                 User.first_name,
@@ -547,6 +548,8 @@ class StatsRepository:
             convs.append({
                 "id": row.id,
                 "user_telegram_id": row.telegram_id,
+                "user_id": row.user_id if hasattr(row, 'user_id') else None,
+                "group_id": row.group_id,
                 "username": row.username,
                 "name": name.strip() or "Unknown",
                 "message_id": row.user_message_id,
@@ -571,6 +574,7 @@ class StatsRepository:
                 Conversation.created_at,
                 Conversation.answered_at,
                 Conversation.user_message_id,
+                Conversation.group_id,
                 Conversation.response_time_seconds,
                 User.telegram_id,
                 User.username,
@@ -595,6 +599,7 @@ class StatsRepository:
             convs.append({
                 "id": row.id,
                 "user_telegram_id": row.telegram_id,
+                "group_id": row.group_id,
                 "username": row.username,
                 "name": name.strip() or "Unknown",
                 "message_id": row.user_message_id,
@@ -606,6 +611,102 @@ class StatsRepository:
                 "response_time": round(row.response_time_seconds or 0, 1)
             })
         return convs
+
+    async def get_history_feed(
+        self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None,
+        limit: int = 50, group_id: Optional[int] = None
+    ) -> List[Dict]:
+        """Barcha harakatlar tarixi: xabarlar va bajarilgan vazifalar"""
+        from sqlalchemy import union_all
+        
+        # 1. Bajarilgan vazifalar
+        task_query = select(
+            Task.id,
+            Task.title,
+            Task.completed_at.label("event_date"),
+            literal("task_done").label("type"),
+            Group.title.label("group_title"),
+            User.first_name.label("user_name"),
+            User.last_name.label("user_last_name")
+        ).join(Group, Task.group_id == Group.id).join(User, Task.user_id == User.id).where(Task.status == "done")
+        
+        if group_id:
+            task_query = task_query.where(Task.group_id == group_id)
+        if date_from:
+            task_query = task_query.where(Task.completed_at >= date_from)
+        if date_to:
+            task_query = task_query.where(Task.completed_at <= date_to)
+            
+        # 2. Yopilgan suhbatlar
+        conv_query = select(
+            Conversation.id,
+            literal("Suhbat yopildi").label("title"),
+            Conversation.answered_at.label("event_date"),
+            literal("chat_closed").label("type"),
+            Group.title.label("group_title"),
+            User.first_name.label("user_name"),
+            User.last_name.label("user_last_name")
+        ).join(Group, Conversation.group_id == Group.id).join(User, Conversation.user_id == User.id).where(Conversation.is_answered == True)
+        
+        if group_id:
+            conv_query = conv_query.where(Conversation.group_id == group_id)
+        if date_from:
+            conv_query = conv_query.where(Conversation.answered_at >= date_from)
+        if date_to:
+            conv_query = conv_query.where(Conversation.answered_at <= date_to)
+
+        # 3. Oxirgi xabarlar (faqat user)
+        msg_query = select(
+            Message.id,
+            Message.text.label("title"),
+            Message.date.label("event_date"),
+            literal("user_message").label("type"),
+            Group.title.label("group_title"),
+            User.first_name.label("user_name"),
+            User.last_name.label("user_last_name")
+        ).join(Group, Message.group_id == Group.id).join(User, Message.user_id == User.id).where(Message.is_from_operator == False)
+        
+        if group_id:
+            msg_query = msg_query.where(Message.group_id == group_id)
+        if date_from:
+            msg_query = msg_query.where(Message.date >= date_from)
+        if date_to:
+            msg_query = msg_query.where(Message.date <= date_to)
+            
+        # 4. Operator javoblari
+        op_query = select(
+            Message.id,
+            Message.text.label("title"),
+            Message.date.label("event_date"),
+            literal("operator_reply").label("type"),
+            Group.title.label("group_title"),
+            User.first_name.label("user_name"),
+            User.last_name.label("user_last_name")
+        ).join(Group, Message.group_id == Group.id).join(User, Message.user_id == User.id).where(Message.is_from_operator == True)
+        
+        if group_id:
+            op_query = op_query.where(Message.group_id == group_id)
+        if date_from:
+            op_query = op_query.where(Message.date >= date_from)
+        if date_to:
+            op_query = op_query.where(Message.date <= date_to)
+
+        # Union and Sort
+        combined = union_all(task_query, conv_query, msg_query, op_query).alias("combined")
+        query = select(combined).order_by(desc(combined.c.event_date)).limit(limit)
+        
+        result = await self.db.execute(query)
+        feed = []
+        for row in result:
+            feed.append({
+                "id": row.id,
+                "title": row.title,
+                "date": row.event_date.isoformat() if row.event_date else None,
+                "type": row.type,
+                "group_title": row.group_title,
+                "user_name": f"{row.user_name or ''} {row.user_last_name or ''}".strip() or "Unknown"
+            })
+        return feed
 
     async def get_top_users(
         self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None,

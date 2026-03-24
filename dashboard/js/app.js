@@ -18,6 +18,10 @@ const App = {
 
         Charts.setDefaults();
         this.loadTheme();
+
+        // localStorage dan guruhni yuklash
+        this.currentGroupId = localStorage.getItem('lastGroupId') || '';
+
         await this.loadGroups();
 
         if (this.currentView) this.navigate(this.currentView);
@@ -68,6 +72,7 @@ const App = {
         if (groupSel) {
             groupSel.addEventListener('change', (e) => {
                 this.currentGroupId = e.target.value === 'all' ? '' : e.target.value;
+                localStorage.setItem('lastGroupId', this.currentGroupId);
                 this.renderGroupIcons(); // Sync icons
                 this.renderView();
             });
@@ -308,6 +313,7 @@ const App = {
         container.querySelectorAll('.group-item').forEach(item => {
             item.addEventListener('click', () => {
                 this.currentGroupId = item.dataset.id || '';
+                localStorage.setItem('lastGroupId', this.currentGroupId);
                 this.renderGroupIcons();
                 this.renderView();
             });
@@ -432,7 +438,6 @@ const App = {
     },
 
 
-    /** ===== USERS PAGE ===== */
     /** ===== USERS PAGE ===== */
     async renderUsers(container) {
         try {
@@ -642,7 +647,7 @@ const App = {
                                 <td>
                                     <div style="display:flex;gap:4px">
                                         <button class="btn-icon" onclick="App.openChatHistoryModal(${item.id})" title="Tarix">📜</button>
-                                        <button class="btn-icon" onclick="App.openTaskModal('${item.group_telegram_id || ''}', ${item.user_telegram_id || item.user_id}, ${item.id})" title="Vazifa qo'shish">✅</button>
+                                        <button class="btn-icon" onclick="App.openTaskModal('${item.group_telegram_id || ''}', ${item.user_telegram_id || item.user_id}, ${item.id}, ${item.group_id})" title="Vazifa qo'shish">✅</button>
                                     </div>
                                 </td>
                             </tr>
@@ -781,13 +786,13 @@ const App = {
     async renderHistory(container) {
         try {
             const q = this.getQueryParams();
-            const data = await Auth.fetch(`/api/stats/answered${q}`);
+            const data = await Auth.fetch(`/api/stats/history-feed${q}`);
             if (!data) throw new Error('Tarix yuklanmadi');
 
             container.innerHTML = `
                 <div class="table-card full-width">
-                    <h3><span class="icon">📜</span> Yopilgan suhbatlar</h3>
-                    ${this.renderConversationsTable(data.answered || [], 'history')}
+                    <h3><span class="icon">📜</span> Tizim faoliyati tarixi</h3>
+                    ${this.renderHistoryFeedTable(data.history_feed || [])}
                 </div>
             `;
         } catch (error) {
@@ -795,14 +800,57 @@ const App = {
         }
     },
 
+    renderHistoryFeedTable(items) {
+        if (!items.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
+
+        const typeLabels = {
+            chat_closed: { text: 'Suhbat yopildi', class: 'badge-success' },
+            task_done: { text: 'Vazifa bajarildi', class: 'badge-primary' },
+            user_message: { text: 'Mijoz xabari', class: 'badge-warning' },
+            operator_reply: { text: 'Operator javobi', class: 'badge-info' }
+        };
+
+        return `
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Vaqt</th>
+                            <th>Tur</th>
+                            <th>Foydalanuvchi</th>
+                            <th>Guruh</th>
+                            <th>Tafsilot</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${items.map(item => {
+            const label = typeLabels[item.type] || { text: item.type, class: 'badge-secondary' };
+            return `
+                                <tr>
+                                    <td style="font-size:11px;white-space:nowrap">${this.formatDate(item.date).split(' ')[1]}<br>${this.formatDate(item.date).split(' ')[0]}</td>
+                                    <td><span class="activity-badge ${label.class}">${label.text}</span></td>
+                                    <td style="font-weight:600">${this.escapeHtml(item.user_name)}</td>
+                                    <td style="font-size:12px">${this.escapeHtml(item.group_title)}</td>
+                                    <td style="max-width:300px;font-size:12px;overflow:hidden;text-overflow:ellipsis" title="${this.escapeHtml(item.title || '')}">
+                                        ${this.escapeHtml(item.title || '')}
+                                    </td>
+                                </tr>
+                            `;
+        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    },
+
     /** ===== TASK MODAL LOGIC ===== */
-    openTaskModal(chatId, userId, conversationId) {
+    openTaskModal(chatId, userId, conversationId, dbGroupId) {
         const modal = document.getElementById('taskModal');
         modal.classList.remove('hidden');
 
         document.getElementById('taskConversationId').value = conversationId || '';
         document.getElementById('taskUserId').value = userId || '';
-        document.getElementById('taskGroupId').value = this.currentGroupId || '';
+        document.getElementById('taskGroupId').value = dbGroupId || this.currentGroupId || '';
 
         document.getElementById('taskForm').reset();
     },

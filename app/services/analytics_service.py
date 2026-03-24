@@ -352,6 +352,9 @@ class AnalyticsService:
             } for t in tasks
         ]
 
+    async def get_history_feed(self, date_from, date_to, group_id: Optional[int] = None):
+        return await self.repo.get_history_feed(date_from, date_to, group_id=group_id)
+
     async def create_task(self, data: Dict[str, Any], created_by_id: int) -> Dict:
         """Yangi vazifa yaratish"""
         task = await self.task_repo.create_task(

@@ -383,3 +383,15 @@ async def remove_operator(
     service = AnalyticsService(db)
     await service.remove_predefined_operator(op_id)
     return {"status": "success"}
+@router.get("/history-feed")
+async def get_history_feed(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Barcha harakatlar tarixi (xabarlar + vazifalar)"""
+    service = AnalyticsService(db)
+    feed = await service.get_history_feed(parse_date(date_from), parse_date(date_to), group_id=group_id)
+    return {"history_feed": feed}
