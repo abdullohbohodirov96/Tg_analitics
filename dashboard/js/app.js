@@ -1012,6 +1012,49 @@ const App = {
             content.innerHTML = '<p class="error">Xatolik yuz berdi</p>';
         }
     },
+
+    /** ===== UTILITY METHODS ===== */
+    formatNumber(num) {
+        if (num === null || num === undefined) return '0';
+        return Math.floor(num).toLocaleString('uz-UZ');
+    },
+
+    formatDate(dateStr) {
+        if (!dateStr) return '-';
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr;
+        
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        
+        return `${day}.${month}.${year} ${hours}:${minutes}`;
+    },
+
+    formatTime(seconds) {
+        if (!seconds || seconds === 0) return '0 min';
+        const s = Math.floor(seconds);
+        
+        if (s < 60) return `${s} sec`;
+        const m = Math.floor(s / 60);
+        if (m < 60) return `${m} min`;
+        const h = Math.floor(m / 60);
+        return `${h} h ${m % 60} min`;
+    },
+
+    escapeHtml(text) {
+        if (!text) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return String(text).replace(/[&<>"']/g, c => map[c]);
+    },
 };
 
 // Ilovani boshlash
