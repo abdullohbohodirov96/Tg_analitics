@@ -262,10 +262,14 @@ const App = {
         const select = document.getElementById('groupSelector');
         if (!select) return;
 
-        let html = '<option value="all">Barcha guruhlar</option>';
-        this.groups.forEach(g => {
-            html += `<option value="${g.id}" ${this.currentGroupId == g.id ? 'selected' : ''}>${this.escapeHtml(g.custom_title || g.title)}</option>`;
-        });
+        let html = '<option value="all">📍 BARCHA GURUHLAR</option>';
+        if (this.groups.length === 0) {
+            html = '<option value="all">Guruhlar yo\'q</option>';
+        } else {
+            this.groups.forEach(g => {
+                html += `<option value="${g.id}" ${this.currentGroupId == g.id ? 'selected' : ''}>👥 ${this.escapeHtml(g.custom_title || g.title)}</option>`;
+            });
+        }
         select.innerHTML = html;
     },
 
@@ -360,84 +364,91 @@ const App = {
 
     /** ===== OVERVIEW PAGE ===== */
     async renderOverview(container) {
-        const q = this.getQueryParams();
-        const [overview, messages, unanswered, answered] = await Promise.all([
-            Auth.fetch(`/api/stats/overview${q}`),
-            Auth.fetch(`/api/stats/daily-messages${q}`),
-            Auth.fetch(`/api/stats/unanswered${q}`),
-            Auth.fetch(`/api/stats/conversations${q}`) // This includes answered messages
-        ]);
+        try {
+            const q = this.getQueryParams();
+            const [overview, messages, unanswered, answered] = await Promise.all([
+                Auth.fetch(`/api/stats/overview${q}`),
+                Auth.fetch(`/api/stats/daily-messages${q}`),
+                Auth.fetch(`/api/stats/unanswered${q}`),
+                Auth.fetch(`/api/stats/conversations${q}`)
+            ]);
 
-        if (!overview) return;
+            if (!overview) throw new Error('Statistika yuklanmadi');
 
-        container.innerHTML = `
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-icon blue">📨</div>
-                    <div class="stat-label">Xabarlar</div>
-                    <div class="stat-value">${this.formatNumber(overview.total_messages)}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon green">👥</div>
-                    <div class="stat-label">Foydalanuvchilar</div>
-                    <div class="stat-value">${this.formatNumber(overview.unique_users)}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon yellow">✅</div>
-                    <div class="stat-label">Javob darajasi</div>
-                    <div class="stat-value">${overview.response_rate}%</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon orange">⏱</div>
-                    <div class="stat-label">O'rtacha javob</div>
-                    <div class="stat-value">${this.formatTime(overview.avg_response_time)}</div>
-                </div>
-            </div>
-
-            <div class="tables-grid">
-                <div class="table-card">
-                    <div class="card-header">
-                        <h3><span class="icon">❌</span> Javob kutayotganlar</h3>
-                        <span class="badge danger">${overview.unanswered_users}</span>
+            container.innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon blue">📨</div>
+                        <div class="stat-label">Xabarlar</div>
+                        <div class="stat-value">${this.formatNumber(overview.total_messages)}</div>
                     </div>
-                    ${this.renderConversationsTable(unanswered?.unanswered || [], 'unanswered')}
-                </div>
-                <div class="table-card">
-                    <div class="card-header">
-                        <h3><span class="icon">✅</span> Yaqinda yopilganlar</h3>
+                    <div class="stat-card">
+                        <div class="stat-icon green">👥</div>
+                        <div class="stat-label">Foydalanuvchilar</div>
+                        <div class="stat-value">${this.formatNumber(overview.unique_users)}</div>
                     </div>
-                    ${this.renderConversationsTable(answered?.recent_messages || [], 'answered')}
+                    <div class="stat-card">
+                        <div class="stat-icon yellow">✅</div>
+                        <div class="stat-label">Javob darajasi</div>
+                        <div class="stat-value">${overview.response_rate}%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon orange">⏱</div>
+                        <div class="stat-label">O'rtacha javob</div>
+                        <div class="stat-value">${this.formatTime(overview.avg_response_time)}</div>
+                    </div>
                 </div>
-            </div>
 
-            <div class="charts-grid">
-                <div class="chart-card full-width">
-                    <h3><span class="icon">📈</span> Aktivlik trendi</h3>
-                    <div class="chart-container"><canvas id="dailyMessagesChart"></canvas></div>
+                <div class="tables-grid">
+                    <div class="table-card">
+                        <div class="card-header">
+                            <h3><span class="icon">❌</span> Javob kutayotganlar</h3>
+                            <span class="badge danger">${overview.unanswered_users}</span>
+                        </div>
+                        ${this.renderConversationsTable(unanswered?.unanswered || [], 'unanswered')}
+                    </div>
+                    <div class="table-card">
+                        <div class="card-header">
+                            <h3><span class="icon">✅</span> Yaqinda yopilganlar</h3>
+                        </div>
+                        ${this.renderConversationsTable(answered?.recent_messages || [], 'answered')}
+                    </div>
                 </div>
-            </div>
-        `;
 
-        // Chartlarni chizish
-        setTimeout(() => {
-            Charts.createDailyMessages('dailyMessagesChart', messages?.daily_messages || []);
-        }, 100);
+                <div class="charts-grid">
+                    <div class="chart-card full-width">
+                        <h3><span class="icon">📈</span> Aktivlik trendi</h3>
+                        <div class="chart-container"><canvas id="dailyMessagesChart"></canvas></div>
+                    </div>
+                </div>
+            `;
+
+            setTimeout(() => {
+                Charts.createDailyMessages('dailyMessagesChart', messages?.daily_messages || []);
+            }, 100);
+        } catch (error) {
+            container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
+        }
     },
 
 
     /** ===== USERS PAGE ===== */
     /** ===== USERS PAGE ===== */
     async renderUsers(container) {
-        const q = this.getQueryParams();
-        const data = await Auth.fetch(`/api/stats/users${q}`);
-        if (!data) return;
+        try {
+            const q = this.getQueryParams();
+            const data = await Auth.fetch(`/api/stats/users${q}`);
+            if (!data) throw new Error('Ma\'lumot yuklanmadi');
 
-        container.innerHTML = `
-            <div class="table-card full-width">
-                <h3><span class="icon">👥</span> Barcha foydalanuvchilar</h3>
-                ${this.renderUsersTable(data.users || [])}
-            </div>
-        `;
+            container.innerHTML = `
+                <div class="table-card full-width">
+                    <h3><span class="icon">👥</span> Barcha foydalanuvchilar</h3>
+                    ${this.renderUsersTable(data.users || [])}
+                </div>
+            `;
+        } catch (error) {
+            container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
+        }
     },
 
     /** ===== USER DETAIL PAGE ===== */
@@ -493,26 +504,27 @@ const App = {
     renderUsersTable(users) {
         if (!users.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
         return `
-    < div style = "overflow-x:auto" >
-        <table class="data-table">
-            <thead><tr><th>#</th><th>Ism</th><th>Xabarlar</th></tr></thead>
-            <tbody>
-                ${users.slice(0, 10).map((u, i) => `
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead><tr><th>#</th><th>Ism</th><th>Xabarlar</th></tr></thead>
+                    <tbody>
+                        ${users.slice(0, 10).map((u, i) => `
                         <tr style="cursor:pointer" onclick="App.navigate('user-detail',{id:${u.id}})">
                             <td>${i + 1}</td>
                             <td><div class="user-name"><div class="avatar">${(u.name || '?')[0].toUpperCase()}</div>${u.name}</div></td>
                             <td><strong>${u.message_count}</strong></td>
                         </tr>
                     `).join('')}
-            </tbody>
-        </table></div >
-            `;
+                    </tbody>
+                </table>
+            </div>
+        `;
     },
 
     renderOperatorsTable(operators) {
         if (!operators.length) return '<div class="empty-state"><p>Ma\'lumot yo\'q</p></div>';
         return `
-            < div style = "overflow-x:auto" >
+            <div style="overflow-x:auto">
                 <table class="data-table">
                     <thead><tr><th>#</th><th>Operator</th><th>Javoblar</th><th>Vaqt</th></tr></thead>
                     <tbody>
@@ -525,8 +537,9 @@ const App = {
                         </tr>
                     `).join('')}
                     </tbody>
-                </table></div >
-                    `;
+                </table>
+            </div>
+        `;
     },
 
     formatTime(seconds) {
@@ -715,63 +728,71 @@ const App = {
 
     /** ===== TASKS PAGE ===== */
     async renderTasks(container) {
-        const q = this.getQueryParams();
-        const data = await Auth.fetch(`/api/stats/tasks${q}`);
-        if (!data) return;
+        try {
+            const q = this.getQueryParams();
+            const data = await Auth.fetch(`/api/stats/tasks${q}`);
+            if (!data) throw new Error('Vazifalar yuklanmadi');
 
-        const tasks = data.tasks || [];
-        const statuses = {
-            new: { title: 'Yangi', color: 'blue' },
-            in_progress: { title: 'Jarayonda', color: 'orange' },
-            done: { title: 'Bajarildi', color: 'green' }
-        };
+            const tasks = data.tasks || [];
+            const statuses = {
+                new: { title: 'Yangi', color: 'blue' },
+                in_progress: { title: 'Jarayonda', color: 'orange' },
+                done: { title: 'Bajarildi', color: 'green' }
+            };
 
-        let html = `
-            <div class="tasks-board">
-                ${Object.entries(statuses).map(([status, info]) => `
-                    <div class="task-column">
-                        <div class="column-header">
-                            <h3>${info.title}</h3>
-                            <span class="badge ${info.color}">${tasks.filter(t => t.status === status).length}</span>
+            let html = `
+                <div class="tasks-board">
+                    ${Object.entries(statuses).map(([status, info]) => `
+                        <div class="task-column">
+                            <div class="column-header">
+                                <h3>${info.title}</h3>
+                                <span class="badge ${info.color}">${tasks.filter(t => t.status === status).length}</span>
+                            </div>
+                            <div class="task-cards">
+                                ${tasks.filter(t => t.status === status).map(task => `
+                                    <div class="task-card-item priority-${task.priority}">
+                                        <div class="task-header">
+                                            <h4>${this.escapeHtml(task.title)}</h4>
+                                            <span class="priority-dot"></span>
+                                        </div>
+                                        <p>${this.escapeHtml(task.description || '')}</p>
+                                        <div class="task-footer">
+                                            <div class="task-user">👤 ${this.escapeHtml(task.user_name)}</div>
+                                            <div class="task-date">📅 ${task.due_date ? this.formatDate(task.due_date).split(' ')[0] : 'No date'}</div>
+                                        </div>
+                                        <div class="task-actions">
+                                            ${status !== 'done' ? `<button onclick="App.updateTaskStatus(${task.id}, 'done')">✅ Bajarildi</button>` : ''}
+                                            ${status === 'new' ? `<button onclick="App.updateTaskStatus(${task.id}, 'in_progress')">⏳ Boshlash</button>` : ''}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
                         </div>
-                        <div class="task-cards">
-                            ${tasks.filter(t => t.status === status).map(task => `
-                                <div class="task-card-item priority-${task.priority}">
-                                    <div class="task-header">
-                                        <h4>${this.escapeHtml(task.title)}</h4>
-                                        <span class="priority-dot"></span>
-                                    </div>
-                                    <p>${this.escapeHtml(task.description || '')}</p>
-                                    <div class="task-footer">
-                                        <div class="task-user">👤 ${this.escapeHtml(task.user_name)}</div>
-                                        <div class="task-date">📅 ${task.due_date ? this.formatDate(task.due_date).split(' ')[0] : 'No date'}</div>
-                                    </div>
-                                    <div class="task-actions">
-                                        ${status !== 'done' ? `<button onclick="App.updateTaskStatus(${task.id}, 'done')">✅ Bajarildi</button>` : ''}
-                                        ${status === 'new' ? `<button onclick="App.updateTaskStatus(${task.id}, 'in_progress')">⏳ Boshlash</button>` : ''}
-                                    </div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-        container.innerHTML = html;
+                    `).join('')}
+                </div>
+            `;
+            container.innerHTML = html;
+        } catch (error) {
+            container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
+        }
     },
 
     /** ===== HISTORY PAGE ===== */
     async renderHistory(container) {
-        const q = this.getQueryParams();
-        const data = await Auth.fetch(`/api/stats/answered${q}`);
-        if (!data) return;
+        try {
+            const q = this.getQueryParams();
+            const data = await Auth.fetch(`/api/stats/answered${q}`);
+            if (!data) throw new Error('Tarix yuklanmadi');
 
-        container.innerHTML = `
-            <div class="table-card full-width">
-                <h3><span class="icon">📜</span> Yopilgan suhbatlar</h3>
-                ${this.renderConversationsTable(data.answered || [], 'history')}
-            </div>
-        `;
+            container.innerHTML = `
+                <div class="table-card full-width">
+                    <h3><span class="icon">📜</span> Yopilgan suhbatlar</h3>
+                    ${this.renderConversationsTable(data.answered || [], 'history')}
+                </div>
+            `;
+        } catch (error) {
+            container.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
+        }
     },
 
     /** ===== TASK MODAL LOGIC ===== */
@@ -862,7 +883,7 @@ const App = {
                         </div>
                     `).join('')}
                     <div style="margin-top:20px; text-align:center">
-                        <a href="https://t.me/c/${history[0]?.group_id || ''}/${history[0]?.telegram_message_id}" 
+                        <a href="https://t.me/c/${history[0]?.group_telegram_id || ''}/${history[0]?.telegram_message_id}" 
                            target="_blank" class="btn btn-primary">Telegramda ochish ↗️</a>
                     </div>
                 </div>

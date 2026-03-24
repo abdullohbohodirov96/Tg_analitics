@@ -49,14 +49,23 @@ const Auth = {
             headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const response = await fetch(url, { ...options, headers });
+        try {
+            const response = await fetch(url, { ...options, headers });
 
-        // Token muddati o'tgan bo'lsa
-        if (response.status === 401) {
-            this.logout();
+            if (response.status === 401) {
+                this.logout();
+                return null;
+            }
+
+            if (!response.ok) {
+                console.error(`API Error: ${response.status} ${url}`);
+                return null;
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error(`Fetch exception (${url}):`, error);
             return null;
         }
-
-        return response.json();
     },
 };

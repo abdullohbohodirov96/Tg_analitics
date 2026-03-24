@@ -302,7 +302,7 @@ class AnalyticsService:
         
         # Suhbatni topamiz
         result = await self.db.execute(
-            select(Conversation).where(Conversation.id == conversation_id)
+            select(Conversation).options(joinedload(Conversation.group)).where(Conversation.id == conversation_id)
         )
         conv = result.scalar_one_or_none()
         if not conv:
@@ -329,7 +329,8 @@ class AnalyticsService:
                 "is_from_operator": m.is_from_operator,
                 "user_name": m.user.full_name,
                 "user_id": m.user_id,
-                "telegram_message_id": m.telegram_message_id
+                "telegram_message_id": m.telegram_message_id,
+                "group_telegram_id": str(conv.group.telegram_id).replace("-100", "") if str(conv.group.telegram_id).startswith("-100") else conv.group.telegram_id
             } for m in messages
         ]
 
