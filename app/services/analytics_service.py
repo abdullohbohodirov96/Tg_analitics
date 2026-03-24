@@ -336,24 +336,56 @@ class AnalyticsService:
 
     async def get_tasks(self, group_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict]:
         """Vazifalar ro'yxati"""
-        tasks = await self.task_repo.get_tasks(group_id=group_id, status=status)
-        return [
-            {
-                "id": t.id,
-                "title": t.title,
-                "description": t.description,
-                "status": t.status,
-                "priority": t.priority,
-                "user_name": t.user.full_name,
-                "group_title": t.group.title,
-                "operator_name": t.assigned_operator.full_name if t.assigned_operator else None,
-                "created_at": t.created_at.isoformat(),
-                "due_date": t.due_date.isoformat() if t.due_date else None
-            } for t in tasks
-        ]
+        try:
+            tasks = await self.task_repo.get_tasks(group_id=group_id, status=status)
+            result = []
+            for t in tasks:
+                try:
+                    result.append({
+                        "id": t.id,
+                        "title": t.title or "Nomi yo'q",
+                        "description": t.description or "",
+                        "status": t.status or "new",
+                        "priority": t.priority or "medium",
+                        "user_name": (t.user.full_name if t.user else "Unknown"),
+                        "group_title": (t.group.title if t.group else "Unknown"),
+                        "operator_name": t.assigned_operator.full_name if (t.assigned_operator and t.assigned_operator.full_name) else None,
+                        "created_at": t.created_at.isoformat() if t.created_at else datetime.utcnow().isoformat(),
+                        "due_date": t.due_date.isoformat() if t.due_date else None
+                    })
+                except Exception as e:
+                    print(f"Error processing task {t.id}: {e}")
+                    continue
+            return result
+        except Exception as e:
+            print(f"Error in get_tasks: {e}")
+            return []
 
     async def get_history_feed(self, date_from, date_to, group_id: Optional[int] = None):
-        return await self.repo.get_history_feed(date_from, date_to, group_id=group_id)
+        """Barcha harakatlar tarixi"""
+        try:
+            feed = await self.repo.get_history_feed(date_from, date_to, group_id=group_id)
+            if not feed:
+                return []
+            # Validate each item
+            validated = []
+            for item in feed:
+                try:
+                    validated.append({
+                        "id": item.get("id", 0),
+                        "title": item.get("title", "No title"),
+                        "date": item.get("event_date") or item.get("date", datetime.utcnow().isoformat()),
+                        "type": item.get("type", "unknown"),
+                        "user_name": item.get("user_name", "Unknown"),
+                        "group_title": item.get("group_title", "Unknown"),
+                    })
+                except Exception as e:
+                    print(f"Error processing history item: {e}")
+                    continue
+            return validated
+        except Exception as e:
+            print(f"Error in get_history_feed: {e}")
+            return []
 
     async def create_task(self, data: Dict[str, Any], created_by_id: int) -> Dict:
         """Yangi vazifa yaratish"""
