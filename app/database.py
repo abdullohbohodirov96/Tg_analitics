@@ -38,39 +38,27 @@ async def get_db() -> AsyncSession:
 from sqlalchemy import text
 
 async def create_tables():
-    """Barcha jadvallarni yaratish (development uchun) va yangi columnlarni qo'shish"""
-    # Modellarni import qilish create_all dan oldin
+    """Barcha jadvallarni yaratish (development uchun) va jadvallarni kengaytirish"""
     import app.models.models as models
     print(f"📊 Jadvallar Metadata-da: {list(Base.metadata.tables.keys())}")
     
+    # 1. Barcha asosiy jadvallarni yaratish
     async with engine.begin() as conn:
-        print("🛠 Jadvallarni yaratish boshlanmoqda...")
+        print("🛠 Jadvallarni yaratish (create_all)...")
         await conn.run_sync(Base.metadata.create_all)
-        print(f"✅ Jadvallar yaratildi. Jami: {len(Base.metadata.tables)}")
-        
-        # Migrations (Add missing columns if they don't exist)
+    
+    # 2. Migratsiyalar (Har birini alohida blockda qilish kerak, xato bo'lsa rollback bo'lmasligi uchun)
+    async def safe_execute_alt(sql):
         try:
-            await conn.execute(text("ALTER TABLE messages ADD COLUMN text TEXT"))
+            async with engine.begin() as conn:
+                await conn.execute(text(sql))
         except Exception:
-            pass  # Already exists
+            pass # Allaqachon mavjud yoki boshqa xato
 
-        try:
-            await conn.execute(text("ALTER TABLE conversations ADD COLUMN response_time_seconds DOUBLE PRECISION"))
-        except Exception:
-            pass  # Already exists
+    await safe_execute_alt("ALTER TABLE messages ADD COLUMN text TEXT")
+    await safe_execute_alt("ALTER TABLE conversations ADD COLUMN response_time_seconds DOUBLE PRECISION")
+    await safe_execute_alt("ALTER TABLE groups ADD COLUMN custom_title VARCHAR(255)")
+    await safe_execute_alt("ALTER TABLE groups ADD COLUMN group_link VARCHAR(255)")
+    await safe_execute_alt("ALTER TABLE users ADD COLUMN is_operator BOOLEAN DEFAULT FALSE")
 
-        # Group table migrations
-        try:
-            await conn.execute(text("ALTER TABLE groups ADD COLUMN custom_title VARCHAR(255)"))
-        except Exception:
-            pass
-
-        try:
-            await conn.execute(text("ALTER TABLE groups ADD COLUMN group_link VARCHAR(255)"))
-        except Exception:
-            pass
-
-        try:
-            await conn.execute(text("ALTER TABLE users ADD COLUMN is_operator BOOLEAN DEFAULT FALSE"))
-        except Exception:
-            pass
+    print(f"✅ Jadvallar va migratsiyalar yakunlandi.")
