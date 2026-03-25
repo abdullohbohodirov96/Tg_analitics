@@ -161,5 +161,6 @@ async def health():
         "tables_in_db": tables_count,
         "tables_in_metadata": registered_tables,
         "admin_exists": admin_exists,
+        "webhook_secret_prefix": settings.WEBHOOK_SECRET[:3] + "...",
         "environment": os.getenv("RENDER", "local")
     }
