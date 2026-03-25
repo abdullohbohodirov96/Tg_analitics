@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # Telegram Bot
     BOT_TOKEN: str = ""
-    WEBHOOK_SECRET: str = "default_secret_change_me"
+    WEBHOOK_SECRET: str = "tg_analytics_webhook_secret_2024"
     OPERATOR_USERNAMES: str = ""  # vergul bilan ajratilgan: admin,manager,operator
 
     # Database — Railway avtomatik beradi
