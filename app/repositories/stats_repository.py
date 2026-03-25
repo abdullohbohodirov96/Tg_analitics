@@ -616,97 +616,72 @@ class StatsRepository:
         self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None,
         limit: int = 50, group_id: Optional[int] = None
     ) -> List[Dict]:
-        """Barcha harakatlar tarixi: xabarlar va bajarilgan vazifalar"""
-        from sqlalchemy import union_all
-        
-        # 1. Bajarilgan vazifalar
-        task_query = select(
-            Task.id,
-            Task.title,
-            Task.completed_at.label("event_date"),
-            literal("task_done").label("type"),
-            Group.title.label("group_title"),
-            User.first_name.label("user_name"),
-            User.last_name.label("user_last_name")
-        ).join(Group, Task.group_id == Group.id).join(User, Task.user_id == User.id).where(Task.status == "done")
-        
-        if group_id:
-            task_query = task_query.where(Task.group_id == group_id)
-        if date_from:
-            task_query = task_query.where(Task.completed_at >= date_from)
-        if date_to:
-            task_query = task_query.where(Task.completed_at <= date_to)
-            
-        # 2. Yopilgan suhbatlar
-        conv_query = select(
-            Conversation.id,
-            literal("Suhbat yopildi").label("title"),
-            Conversation.answered_at.label("event_date"),
-            literal("chat_closed").label("type"),
-            Group.title.label("group_title"),
-            User.first_name.label("user_name"),
-            User.last_name.label("user_last_name")
-        ).join(Group, Conversation.group_id == Group.id).join(User, Conversation.user_id == User.id).where(Conversation.is_answered == True)
-        
-        if group_id:
-            conv_query = conv_query.where(Conversation.group_id == group_id)
-        if date_from:
-            conv_query = conv_query.where(Conversation.answered_at >= date_from)
-        if date_to:
-            conv_query = conv_query.where(Conversation.answered_at <= date_to)
-
-        # 3. Oxirgi xabarlar (faqat user)
-        msg_query = select(
-            Message.id,
-            Message.text.label("title"),
-            Message.date.label("event_date"),
-            literal("user_message").label("type"),
-            Group.title.label("group_title"),
-            User.first_name.label("user_name"),
-            User.last_name.label("user_last_name")
-        ).join(Group, Message.group_id == Group.id).join(User, Message.user_id == User.id).where(Message.is_from_operator == False)
-        
-        if group_id:
-            msg_query = msg_query.where(Message.group_id == group_id)
-        if date_from:
-            msg_query = msg_query.where(Message.date >= date_from)
-        if date_to:
-            msg_query = msg_query.where(Message.date <= date_to)
-            
-        # 4. Operator javoblari
-        op_query = select(
-            Message.id,
-            Message.text.label("title"),
-            Message.date.label("event_date"),
-            literal("operator_reply").label("type"),
-            Group.title.label("group_title"),
-            User.first_name.label("user_name"),
-            User.last_name.label("user_last_name")
-        ).join(Group, Message.group_id == Group.id).join(User, Message.user_id == User.id).where(Message.is_from_operator == True)
-        
-        if group_id:
-            op_query = op_query.where(Message.group_id == group_id)
-        if date_from:
-            op_query = op_query.where(Message.date >= date_from)
-        if date_to:
-            op_query = op_query.where(Message.date <= date_to)
-
-        # Union and Sort
-        combined = union_all(task_query, conv_query, msg_query, op_query).alias("combined")
-        query = select(combined).order_by(desc(combined.c.event_date)).limit(limit)
-        
-        result = await self.db.execute(query)
+        """Barcha harakatlar tarixi — oddiy va ishonchli usul"""
         feed = []
-        for row in result:
-            feed.append({
-                "id": row.id,
-                "title": row.title,
-                "date": row.event_date.isoformat() if row.event_date else None,
-                "type": row.type,
-                "group_title": row.group_title,
-                "user_name": f"{row.user_name or ''} {row.user_last_name or ''}".strip() or "Unknown"
-            })
-        return feed
+
+        # 1. Oxirgi xabarlar (user + operator)
+        try:
+            msg_filters = self._date_filters(Message.date, date_from, date_to, group_id=group_id, model=Message)
+            msg_result = await self.db.execute(
+                select(
+                    Message.id,
+                    Message.text,
+                    Message.date,
+                    Message.is_from_operator,
+                    Group.title.label("group_title"),
+                    User.first_name,
+                    User.last_name,
+                ).join(Group, Message.group_id == Group.id)
+                .join(User, Message.user_id == User.id)
+                .where(*msg_filters)
+                .order_by(Message.date.desc())
+                .limit(limit)
+            )
+            for row in msg_result:
+                name = f"{row.first_name or ''} {row.last_name or ''}".strip() or "Unknown"
+                feed.append({
+                    "id": row.id,
+                    "title": (row.text or "(media)")[:200],
+                    "date": row.date.isoformat() if row.date else None,
+                    "type": "operator_reply" if row.is_from_operator else "user_message",
+                    "group_title": row.group_title or "Unknown",
+                    "user_name": name,
+                })
+        except Exception as e:
+            print(f"History feed messages error: {e}")
+
+        # 2. Yopilgan suhbatlar
+        try:
+            conv_filters = self._date_filters(Conversation.answered_at, date_from, date_to, group_id=group_id, model=Conversation)
+            conv_result = await self.db.execute(
+                select(
+                    Conversation.id,
+                    Conversation.answered_at,
+                    Group.title.label("group_title"),
+                    User.first_name,
+                    User.last_name,
+                ).join(Group, Conversation.group_id == Group.id)
+                .join(User, Conversation.user_id == User.id)
+                .where(Conversation.is_answered == True, *conv_filters)
+                .order_by(Conversation.answered_at.desc())
+                .limit(limit)
+            )
+            for row in conv_result:
+                name = f"{row.first_name or ''} {row.last_name or ''}".strip() or "Unknown"
+                feed.append({
+                    "id": row.id,
+                    "title": "Suhbat yopildi",
+                    "date": row.answered_at.isoformat() if row.answered_at else None,
+                    "type": "chat_closed",
+                    "group_title": row.group_title or "Unknown",
+                    "user_name": name,
+                })
+        except Exception as e:
+            print(f"History feed conversations error: {e}")
+
+        # Sort by date descending, take top N
+        feed.sort(key=lambda x: x.get("date") or "", reverse=True)
+        return feed[:limit]
 
     async def get_top_users(
         self, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None,

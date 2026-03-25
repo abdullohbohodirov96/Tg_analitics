@@ -374,7 +374,7 @@ const App = {
             const q = this.getQueryParams();
             const [overview, messages, unanswered, answered] = await Promise.all([
                 Auth.fetch(`/api/stats/overview${q}`),
-                Auth.fetch(`/api/stats/daily-messages${q}`),
+                Auth.fetch(`/api/stats/messages${q}`),
                 Auth.fetch(`/api/stats/unanswered${q}`),
                 Auth.fetch(`/api/stats/conversations${q}`)
             ]);
@@ -618,25 +618,7 @@ const App = {
         `;
     },
 
-    formatTime(seconds) {
-        if (!seconds || seconds === 0) return '0s';
-        if (seconds > 86400) return Math.round(seconds / 86400) + ' kun';
-        if (seconds > 3600) return (seconds / 3600).toFixed(1) + ' soat';
-        if (seconds > 60) return Math.round(seconds / 60) + ' daq';
-        return Math.round(seconds) + 's';
-    },
 
-    formatDate(isoStr) {
-        if (!isoStr) return '-';
-        const d = new Date(isoStr);
-        return d.toLocaleDateString('uz-UZ', { day: '2-digit', month: '2-digit', year: 'numeric' })
-            + ' ' + d.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
-    },
-
-    escapeHtml(str) {
-        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-        return (str || '').replace(/[&<>"']/g, c => map[c]);
-    },
 
     renderUnansweredTable(items) {
         if (!items.length) return '<div class="empty-state"><p>✅ Barcha xabarlarga javob berilgan</p></div>';

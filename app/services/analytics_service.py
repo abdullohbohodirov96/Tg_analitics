@@ -364,25 +364,7 @@ class AnalyticsService:
     async def get_history_feed(self, date_from, date_to, group_id: Optional[int] = None):
         """Barcha harakatlar tarixi"""
         try:
-            feed = await self.repo.get_history_feed(date_from, date_to, group_id=group_id)
-            if not feed:
-                return []
-            # Validate each item
-            validated = []
-            for item in feed:
-                try:
-                    validated.append({
-                        "id": item.get("id", 0),
-                        "title": item.get("title", "No title"),
-                        "date": item.get("event_date") or item.get("date", datetime.utcnow().isoformat()),
-                        "type": item.get("type", "unknown"),
-                        "user_name": item.get("user_name", "Unknown"),
-                        "group_title": item.get("group_title", "Unknown"),
-                    })
-                except Exception as e:
-                    print(f"Error processing history item: {e}")
-                    continue
-            return validated
+            return await self.repo.get_history_feed(date_from, date_to, group_id=group_id)
         except Exception as e:
             print(f"Error in get_history_feed: {e}")
             return []
