@@ -38,12 +38,14 @@ class Settings(BaseSettings):
     @property
     def async_database_url(self) -> str:
         """
-        Railway postgresql:// beradi, lekin bizga postgresql+asyncpg:// kerak.
+        Railway postgresql:// yoki postgres:// beradi, lekin bizga postgresql+asyncpg:// kerak.
         Bu property avtomatik o'zgartiradi.
         """
         url = self.DATABASE_URL
         if url.startswith("postgresql://"):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
         return url
 
     class Config:
