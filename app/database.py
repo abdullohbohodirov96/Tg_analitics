@@ -53,10 +53,14 @@ from sqlalchemy import text
 async def create_tables():
     """Barcha jadvallarni yaratish (development uchun) va yangi columnlarni qo'shish"""
     # Modellarni import qilish create_all dan oldin
-    from app.models import models
+    import app.models.models as models
+    
+    print(f"🔍 Metadata orqali topilgan jadvallar: {list(Base.metadata.tables.keys())}")
     
     async with engine.begin() as conn:
+        print("🛠 Jadvallarni yaratish boshlanmoqda (metadata.create_all)...")
         await conn.run_sync(Base.metadata.create_all)
+        print("✅ Jadvallar yaratish so'rovi yakunlandi.")
         
         # Migrations (Add missing columns if they don't exist)
         try:

@@ -13,7 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
-from app.database import create_tables, async_session
+from app.database import Base, create_tables, async_session
+print(f"📊 MODELLAR YUKLANMOQDA: AdminUser va boshqalar...")
 from app.repositories.stats_repository import StatsRepository
 from app.utils.security import hash_password
 
@@ -32,12 +33,9 @@ async def lifespan(app: FastAPI):
     """
     import asyncio
     
-    # Startup
-    print("🚀 Ilova ishga tushmoqda...")
-    print(f"📦 DATABASE_URL: {settings.async_database_url[:30]}...")
-
     # Jadvallarni yaratish
     try:
+        print(f"📡 DB URL: {settings.async_database_url[:20]}***")
         await create_tables()
         print("✅ Database jadvallar tayyor")
     except Exception as e:
