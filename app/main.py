@@ -13,7 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
-from app.database import Base, create_tables, async_session
+from app.models.base import Base
+from app.database import create_tables, async_session
 print(f"📊 MODELLAR YUKLANMOQDA: AdminUser va boshqalar...")
 from app.repositories.stats_repository import StatsRepository
 from app.utils.security import hash_password

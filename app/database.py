@@ -1,20 +1,13 @@
-"""
-Database ulanish va session boshqaruvi.
-SQLAlchemy async engine ishlatiladi PostgreSQL bilan ishlash uchun.
-"""
-
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
-
 from app.config import get_settings
+from app.models.base import Base
 
 settings = get_settings()
 
 # Async engine yaratish
-# Railway postgresql:// beradi, async_database_url avtomatik postgresql+asyncpg:// ga o'zgartiradi
 engine = create_async_engine(
     settings.async_database_url,
-    echo=False,  # Production da False bo'lishi kerak
+    echo=False,
     pool_size=20,
     max_overflow=10,
 )
@@ -25,12 +18,6 @@ async_session = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
-
-
-class Base(DeclarativeBase):
-    """Barcha modellar uchun base class"""
-    pass
-
 
 async def get_db() -> AsyncSession:
     """
@@ -54,13 +41,12 @@ async def create_tables():
     """Barcha jadvallarni yaratish (development uchun) va yangi columnlarni qo'shish"""
     # Modellarni import qilish create_all dan oldin
     import app.models.models as models
-    
-    print(f"🔍 Metadata orqali topilgan jadvallar: {list(Base.metadata.tables.keys())}")
+    print(f"📊 Jadvallar Metadata-da: {list(Base.metadata.tables.keys())}")
     
     async with engine.begin() as conn:
-        print("🛠 Jadvallarni yaratish boshlanmoqda (metadata.create_all)...")
+        print("🛠 Jadvallarni yaratish boshlanmoqda...")
         await conn.run_sync(Base.metadata.create_all)
-        print("✅ Jadvallar yaratish so'rovi yakunlandi.")
+        print(f"✅ Jadvallar yaratildi. Jami: {len(Base.metadata.tables)}")
         
         # Migrations (Add missing columns if they don't exist)
         try:
