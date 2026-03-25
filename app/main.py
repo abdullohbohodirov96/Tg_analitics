@@ -133,5 +133,21 @@ async def login_page():
 
 @app.get("/health")
 async def health():
-    """Health check endpoint"""
-    return {"status": "ok"}
+    """Health check endpoint with DB verification"""
+    db_status = "unknown"
+    tables_count = 0
+    try:
+        from sqlalchemy import text
+        async with async_session() as db:
+            result = await db.execute(text("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'"))
+            tables_count = result.scalar()
+            db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+
+    return {
+        "status": "ok",
+        "database": db_status,
+        "tables_found": tables_count,
+        "environment": os.getenv("RENDER", "local")
+    }
