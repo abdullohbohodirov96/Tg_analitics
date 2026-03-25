@@ -328,17 +328,33 @@ async def get_answered(
 
 @router.get("/conversations")
 async def get_conversations(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
     group_id: Optional[int] = Query(None),
+    limit: int = Query(50),
     db: AsyncSession = Depends(get_db),
     _admin: dict = Depends(get_current_admin),
 ):
-    """Sekin javob berilgan suhbatlar"""
+    """Suhbatlar ro'yxati (filtrlangan)"""
     service = AnalyticsService(db)
-    slow = await service.get_slow_responses(parse_date(date_from), parse_date(date_to), group_id=group_id)
-    recent = await service.get_recent_messages(parse_date(date_from), parse_date(date_to), group_id=group_id)
-    return {"slow_responses": slow, "recent_messages": recent}
+    convs = await service.get_conversations(status=status, group_id=group_id, limit=limit)
+    return {"conversations": convs}
+
+class ConversationStatusUpdate(BaseModel):
+    status: str
+
+@router.patch("/conversations/{conversation_id}/status")
+async def update_conversation_status(
+    conversation_id: int,
+    data: ConversationStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+):
+    """Suhbat statusini yangilash"""
+    service = AnalyticsService(db)
+    result = await service.update_conversation_status(conversation_id, data.status)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
 
 
 @router.get("/conversations/{conversation_id}/history")

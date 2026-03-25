@@ -199,7 +199,7 @@ class StatsRepository:
         text: str, date: datetime, reply_to_message_id: Optional[int] = None,
         is_from_operator: bool = False
     ) -> Message:
-        """Xabarni saqlash"""
+        """Xabarni saqlash va Conversation'ni yangilash"""
         msg = Message(
             telegram_message_id=telegram_message_id,
             group_id=group_id,
@@ -210,6 +210,24 @@ class StatsRepository:
             is_from_operator=is_from_operator,
         )
         self.db.add(msg)
+        
+        # Conversationni yangilash
+        # Agar reply bolsa, osha conversationni topamiz
+        if reply_to_message_id:
+            res = await self.db.execute(
+                select(Conversation).where(
+                    and_(
+                        Conversation.group_id == group_id,
+                        Conversation.user_message_id == reply_to_message_id
+                    )
+                )
+            )
+            conv = res.scalar_one_or_none()
+            if conv:
+                conv.last_activity_at = date
+                if not is_from_operator:
+                    conv.status = "waiting" # User yana yozdi
+        
         await self.db.flush()
         return msg
 
@@ -232,16 +250,33 @@ class StatsRepository:
     # =====================================================
 
     async def create_conversation(
-        self, group_id: int, user_id: int, user_message_id: int
+        self, group_id: int, user_id: int, user_message_id: int,
+        topic_id: Optional[int] = None, topic_name: Optional[str] = None
     ) -> Conversation:
         """Yangi suhbat yaratish (user xabar yozganda)"""
         conv = Conversation(
             group_id=group_id,
             user_id=user_id,
             user_message_id=user_message_id,
+            topic_id=topic_id,
+            topic_name=topic_name,
+            status="new",
+            last_activity_at=datetime.utcnow()
         )
         self.db.add(conv)
         await self.db.flush()
+        return conv
+
+    async def update_conversation_status(self, conversation_id: int, status: str):
+        """Suhbat statusini qo'lda o'zgartirish"""
+        result = await self.db.execute(
+            select(Conversation).where(Conversation.id == conversation_id)
+        )
+        conv = result.scalar_one_or_none()
+        if conv:
+            conv.status = status
+            conv.last_activity_at = datetime.utcnow()
+            await self.db.flush()
         return conv
 
     async def mark_conversation_answered(
@@ -255,10 +290,12 @@ class StatsRepository:
         conv = result.scalar_one_or_none()
         if conv:
             conv.is_answered = True
+            conv.status = "answered"
             conv.operator_id = operator_id
             conv.operator_reply_id = operator_reply_id
             conv.response_time_seconds = response_time
             conv.answered_at = answered_at
+            conv.last_activity_at = answered_at
             await self.db.flush()
 
     async def mark_user_conversations_answered(
@@ -276,9 +313,11 @@ class StatsRepository:
         convs = result.scalars().all()
         for conv in convs:
             conv.is_answered = True
+            conv.status = "answered"
             conv.operator_id = operator_id
             conv.operator_reply_id = operator_reply_id
             conv.answered_at = answered_at
+            conv.last_activity_at = answered_at
             # Har biri uchun o'zining response_timesi bo'ladi
             conv.response_time_seconds = (answered_at - conv.created_at).total_seconds()
         
@@ -522,6 +561,10 @@ class StatsRepository:
         result = await self.db.execute(
             select(
                 Conversation.id,
+                Conversation.status,
+                Conversation.topic_id,
+                Conversation.topic_name,
+                Conversation.last_activity_at,
                 Conversation.created_at,
                 Conversation.user_message_id,
                 Conversation.group_id,
@@ -537,7 +580,7 @@ class StatsRepository:
             .join(Group, Conversation.group_id == Group.id)
             .outerjoin(Message, and_(Message.telegram_message_id == Conversation.user_message_id, Message.group_id == Conversation.group_id))
             .where(Conversation.is_answered == False, *conv_filters)
-            .order_by(Conversation.created_at.desc())
+            .order_by(Conversation.last_activity_at.desc())
             .limit(limit)
         )
         convs = []
@@ -547,6 +590,10 @@ class StatsRepository:
                 name += f" {row.last_name}"
             convs.append({
                 "id": row.id,
+                "status": row.status,
+                "topic_id": row.topic_id,
+                "topic_name": row.topic_name,
+                "last_activity_at": row.last_activity_at.isoformat(),
                 "user_telegram_id": row.telegram_id,
                 "user_id": row.user_id if hasattr(row, 'user_id') else None,
                 "group_id": row.group_id,
@@ -557,7 +604,7 @@ class StatsRepository:
                 "group_title": row.group_title,
                 "message_text": (row.message_text or "")[:200],
                 "created_at": row.created_at.isoformat(),
-                "waiting_time": (datetime.utcnow() - row.created_at).total_seconds(),
+                "waiting_time": (datetime.utcnow() - row.last_activity_at).total_seconds(),
             })
         return convs
 
@@ -571,6 +618,10 @@ class StatsRepository:
         result = await self.db.execute(
             select(
                 Conversation.id,
+                Conversation.status,
+                Conversation.topic_id,
+                Conversation.topic_name,
+                Conversation.last_activity_at,
                 Conversation.created_at,
                 Conversation.answered_at,
                 Conversation.user_message_id,
@@ -598,6 +649,10 @@ class StatsRepository:
                 name += f" {row.last_name}"
             convs.append({
                 "id": row.id,
+                "status": row.status,
+                "topic_id": row.topic_id,
+                "topic_name": row.topic_name,
+                "last_activity_at": row.last_activity_at.isoformat(),
                 "user_telegram_id": row.telegram_id,
                 "group_id": row.group_id,
                 "username": row.username,

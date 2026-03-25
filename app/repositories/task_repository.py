@@ -18,7 +18,8 @@ class TaskRepository:
     async def create_task(
         self, title: str, description: str, group_id: int, user_id: int,
         created_by_id: int, conversation_id: Optional[int] = None,
-        priority: str = "medium", due_date: Optional[datetime] = None
+        priority: str = "medium", due_date: Optional[datetime] = None,
+        source_message_id: Optional[int] = None
     ) -> Task:
         """Yangi vazifa yaratish"""
         task = Task(
@@ -30,11 +31,28 @@ class TaskRepository:
             created_by_id=created_by_id,
             priority=priority,
             due_date=due_date,
+            source_message_id=source_message_id,
             status="new"
         )
         self.db.add(task)
         await self.db.flush()
         return task
+
+    async def find_last_user_message_in_group(self, group_id: int, user_id: Optional[int] = None) -> Optional[Message]:
+        """Guruhdagi oxirgi foydalanuvchi xabarini topish"""
+        from app.models.models import Message
+        query = select(Message).where(
+            and_(
+                Message.group_id == group_id,
+                Message.is_from_operator == False
+            )
+        ).order_by(desc(Message.date))
+        
+        if user_id:
+            query = query.where(Message.user_id == user_id)
+            
+        result = await self.db.execute(query.limit(1))
+        return result.scalars().first()
 
     async def get_tasks(
         self, group_id: Optional[int] = None, status: Optional[str] = None,

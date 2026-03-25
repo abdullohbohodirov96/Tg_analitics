@@ -6,6 +6,8 @@
 const App = {
     currentView: 'overview',
     currentFilter: 'week',
+    taskFilter: 'all',
+    chatFilter: 'all',
     currentGroupId: '',
     dateFrom: null,
     dateTo: null,
@@ -144,7 +146,8 @@ const App = {
         const titles = {
             overview: '📊 Overview',
             tasks: '✅ Vazifalar',
-            history: '📜 Suhbatlar tarixi',
+            chats: '💬 Suhbatlar',
+            history: '📜 Tizim faoliyati',
             operators: '👨‍💼 Operatorlar',
             users: '👥 Foydalanuvchilar',
             'operator-detail': '👨‍💼 Operator ma\'lumotlari',
@@ -167,6 +170,9 @@ const App = {
                 break;
             case 'tasks':
                 await this.renderTasks(content);
+                break;
+            case 'chats':
+                await this.renderChats(content);
                 break;
             case 'history':
                 await this.renderHistory(content);
@@ -712,48 +718,88 @@ const App = {
     },
 
     /** ===== CHAT MODAL LOGIC ===== */
-    async openChatModal(type) {
+    /** ===== CHAT MODAL LOGIC ===== */
+    async openChatModal(userTelegramId, groupId, conversationId) {
         const modal = document.getElementById('chatModal');
         const title = document.getElementById('chatModalTitle');
         const loading = document.getElementById('chatModalLoading');
         const content = document.getElementById('chatModalContent');
 
         modal.classList.remove('hidden');
-        title.textContent = type === 'unanswered' ? '❌ Javobsiz qolgan suhbatlar' : '✅ Javob berilgan suhbatlar';
+        title.textContent = 'Suhbat tafsiloti';
         content.innerHTML = '';
         loading.classList.remove('hidden');
 
         try {
-            const endpoint = type === 'unanswered' ? '/api/stats/unanswered' : '/api/stats/answered';
-            const data = await Auth.fetch(`${endpoint}${this.getQueryParams()}`);
-
+            const url = conversationId ? 
+                `/api/stats/conversations/${conversationId}/history` : 
+                `/api/stats/user-history?user_id=${userTelegramId}&group_id=${groupId}`;
+            
+            const data = await Auth.fetch(url);
             loading.classList.add('hidden');
 
-            const list = data[type] || [];
-            if (list.length === 0) {
-                content.innerHTML = '<div class="empty-state"><p>Ma\'lumot topilmadi</p></div>';
+            if (!data || !data.messages || data.messages.length === 0) {
+                content.innerHTML = '<div class="empty-state"><p>Xabarlar topilmadi</p></div>';
                 return;
             }
 
-            content.innerHTML = list.map(chat => `
-                <div class="chat-item">
-                    <div class="chat-header">
-                        <div class="chat-user">${this.escapeHtml(chat.name)} ${chat.username ? `<span style="color:var(--text-muted);font-weight:400">@${chat.username}</span>` : ''}</div>
-                        <div class="chat-time">${this.formatDate(chat.created_at)}</div>
-                    </div>
-                    ${chat.group_title ? `<div class="chat-group-badge">Guruh: ${this.escapeHtml(chat.group_title)}</div>` : ''}
-                    <div class="chat-text">
-                        ${this.escapeHtml(chat.message_text ? `"${chat.message_text}"` : '(Xabar matni yo\'q)')}
-                    </div>
-                    <div style="font-size:12px;color:var(--${type === 'answered' ? 'success' : 'danger'});margin-bottom:8px">
-                        ${type === 'answered' ? `Javob berilgan (Kutish: ${this.formatTime(chat.response_time)})` : `Kutmoqda: ${this.formatTime(chat.waiting_time)}`}
+            const messages = data.messages;
+            const conv = data.conversation || {};
+
+            // Header for the chat modal with status and info
+            let headerHtml = `
+                <div class="chat-modal-header-info" style="padding:12px; background:var(--bg-secondary); border-radius:8px; margin-bottom:16px; border:1px solid var(--border-color)">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start">
+                        <div>
+                            <div style="font-weight:600; font-size:16px">${this.escapeHtml(messages[0]?.user_name || 'Mijoz')}</div>
+                            <div style="font-size:12px; color:var(--text-muted)">
+                                ${conv.group_title ? `📍 ${this.escapeHtml(conv.group_title)}` : ''} 
+                                ${conv.topic_name ? ` • 🏷️ ${this.escapeHtml(conv.topic_name)}` : ''}
+                            </div>
+                        </div>
+                        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px">
+                            ${conv.status ? `<span class="status-badge status-${conv.status}">${conv.status}</span>` : ''}
+                            <button class="btn btn-primary btn-sm" onclick="App.openTaskModal(null, ${messages[0]?.user_id}, ${conversationId}, ${groupId})">
+                                ➕ Task yaratish
+                            </button>
+                        </div>
                     </div>
                 </div>
-            `).join('');
+            `;
+
+            let messagesHtml = `
+                <div class="chat-messages-container" style="display:flex; flex-direction:column; gap:12px; padding-bottom:20px;">
+                    ${messages.map(msg => `
+                        <div class="msg-bubble ${msg.is_from_operator ? 'msg-operator' : 'msg-user'}" style="
+                            max-width: 80%;
+                            padding: 10px 14px;
+                            border-radius: 14px;
+                            ${msg.is_from_operator ? 
+                                'align-self: flex-end; background: var(--accent-glow); border: 1px solid var(--accent); border-bottom-right-radius: 4px;' : 
+                                'align-self: flex-start; background: var(--bg-card); border: 1px solid var(--border-color); border-bottom-left-radius: 4px;'
+                            }
+                        ">
+                            <div class="msg-text" style="font-size: 14px; line-height: 1.5; white-space: pre-wrap;">${this.escapeHtml(msg.text || '(media)')}</div>
+                            <div class="msg-meta" style="display:flex; align-items:center; gap:6px; margin-top:4px; font-size:10px; color:var(--text-muted); ${msg.is_from_operator ? 'justify-content:flex-end' : ''}">
+                                <span>${msg.is_from_operator ? '👨‍💻 Operator' : ''}</span>
+                                <span>${this.formatClock(msg.date)}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            content.innerHTML = headerHtml + messagesHtml;
+
+            // Scroll to bottom
+            setTimeout(() => {
+                const container = document.querySelector('.modal-body');
+                if (container) container.scrollTop = container.scrollHeight;
+            }, 100);
 
         } catch (error) {
             loading.classList.add('hidden');
-            content.innerHTML = '<div class="empty-state"><p style="color:var(--danger)">Xatolik yuz berdi</p></div>';
+            content.innerHTML = `<div class="empty-state"><p style="color:var(--danger)">Xatolik: ${error.message}</p></div>`;
         }
     },
 
@@ -798,16 +844,34 @@ const App = {
                 done: { title: 'Bajarildi', color: 'green' }
             };
 
+            const filter = this.taskFilter || 'all';
+            const filteredTasks = tasks.filter(t => {
+                if (filter === 'pending') return t.status === 'new' || t.status === 'in_progress';
+                if (filter === 'done') return t.status === 'done';
+                return true;
+            });
+
             let html = `
+                <div class="tasks-header">
+                    <div class="filter-group">
+                        <button class="filter-btn ${filter === 'all' ? 'active' : ''}" onclick="App.setTaskFilter('all')">Barchasi</button>
+                        <button class="filter-btn ${filter === 'pending' ? 'active' : ''}" onclick="App.setTaskFilter('pending')">Kutilmoqda</button>
+                        <button class="filter-btn ${filter === 'done' ? 'active' : ''}" onclick="App.setTaskFilter('done')">Bajarilgan</button>
+                    </div>
+                </div>
                 <div class="tasks-board">
-                    ${Object.entries(statuses).map(([status, info]) => `
+                    ${Object.entries(statuses).map(([status, info]) => {
+                const columnTasks = filteredTasks.filter(t => t.status === status);
+                if (filter !== 'all' && columnTasks.length === 0) return '';
+                
+                return `
                         <div class="task-column">
                             <div class="column-header">
                                 <h3>${info.title}</h3>
-                                <span class="badge ${info.color}">${tasks.filter(t => t.status === status).length}</span>
+                                <span class="badge ${info.color}">${columnTasks.length}</span>
                             </div>
                             <div class="task-cards">
-                                ${tasks.filter(t => t.status === status).map(task => `
+                                ${columnTasks.map(task => `
                                     <div class="task-card-item priority-${task.priority}">
                                         <div class="task-header">
                                             <h4>${this.escapeHtml(task.title)}</h4>
@@ -816,7 +880,13 @@ const App = {
                                         <p>${this.escapeHtml(task.description || '')}</p>
                                         <div class="task-footer">
                                             <div class="task-user">👤 ${this.escapeHtml(task.user_name)}</div>
-                                            <div class="task-date">📅 ${task.due_date ? this.formatDate(task.due_date).split(' ')[0] : 'No date'}</div>
+                                            <div style="display:flex; gap:8px; align-items:center">
+                                                <div class="task-date">📅 ${task.due_date ? this.formatDate(task.due_date).split(' ')[0] : 'No date'}</div>
+                                                ${task.source_message_id ? `
+                                                    <a href="https://t.me/c/${task.group_telegram_id}/${task.source_message_id}" 
+                                                       target="_blank" class="task-source-link" title="Telegramda ochish">🔗</a>
+                                                ` : ''}
+                                            </div>
                                         </div>
                                         <div class="task-actions">
                                             ${status !== 'done' ? `<button onclick="App.updateTaskStatus(${task.id}, 'done')">✅ Bajarildi</button>` : ''}
@@ -826,7 +896,7 @@ const App = {
                                 `).join('')}
                             </div>
                         </div>
-                    `).join('')}
+                    `}).join('')}
                 </div>
             `;
             container.innerHTML = html;
@@ -896,6 +966,122 @@ const App = {
         `;
     },
 
+    /** ===== CHATS (CRM) ===== */
+    async renderChats(container) {
+        container.innerHTML = `
+            <div class="table-card full-width">
+                <div class="chats-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h3><span class="icon">💬</span> Mijozlar bilan suhbatlar</h3>
+                    <div class="filter-group">
+                        <button class="filter-btn ${this.chatFilter === 'all' ? 'active' : ''}" data-chat-filter="all">Barchasi</button>
+                        <button class="filter-btn ${this.chatFilter === 'new' ? 'active' : ''}" data-chat-filter="new">Yangi</button>
+                        <button class="filter-btn ${this.chatFilter === 'waiting' ? 'active' : ''}" data-chat-filter="waiting">Kutilmoqda</button>
+                        <button class="filter-btn ${this.chatFilter === 'answered' ? 'active' : ''}" data-chat-filter="answered">Javob berilgan</button>
+                    </div>
+                </div>
+                <div id="chatsListContainer">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        `;
+
+        // Filter events
+        container.querySelectorAll('[data-chat-filter]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.chatFilter = btn.dataset.chatFilter;
+                this.renderChats(container);
+            });
+        });
+
+        await this.loadChats();
+    },
+
+    async loadChats() {
+        const container = document.getElementById('chatsListContainer');
+        if (!container) return;
+
+        try {
+            const q = this.getQueryParams();
+            const char = q.includes('?') ? '&' : '?';
+            const statusParam = this.chatFilter !== 'all' ? `${char}status=${this.chatFilter}` : '';
+            
+            const data = await Auth.fetch(`/api/stats/conversations${q}${statusParam}`);
+            if (data && data.conversations) {
+                container.innerHTML = this.renderChatsList(data.conversations);
+            } else {
+                container.innerHTML = '<div class="empty-state"><p>Suhbatlar topilmadi</p></div>';
+            }
+        } catch (e) {
+            container.innerHTML = `<div class="empty-state danger"><p>Xatolik: ${e.message}</p></div>`;
+        }
+    },
+
+    renderChatsList(convs) {
+        if (!convs.length) return '<div class="empty-state"><p>Suhbatlar mavjud emas</p></div>';
+
+        return `
+            <div style="overflow-x:auto">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Foydalanuvchi</th>
+                            <th>Status</th>
+                            <th>Guruh / Topic</th>
+                            <th>So'nggi faollik</th>
+                            <th>Amallar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${convs.map(c => `
+                            <tr>
+                                <td>
+                                    <div class="user-name">
+                                        <div class="avatar">${(c.name || '?')[0].toUpperCase()}</div>
+                                        <div style="display:flex;flex-direction:column">
+                                            <span style="font-weight:600">${this.escapeHtml(c.name)}</span>
+                                            <span style="font-size:11px;color:var(--text-muted)">${c.username ? '@' + c.username : ''}</span>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td><span class="status-badge status-${c.status}">${c.status}</span></td>
+                                <td>
+                                    <div class="conv-tags">
+                                        <span class="tag-pill">${this.escapeHtml(c.group_title)}</span>
+                                        ${c.topic_name ? `<span class="tag-pill tag-topic">${this.escapeHtml(c.topic_name)}</span>` : ''}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="display:flex;flex-direction:column">
+                                        <span style="font-size:12px">${this.formatDate(c.last_activity_at)}</span>
+                                        ${c.response_time ? `<span class="response-time-info" style="color:var(--success)">⚡️ ${this.formatTime(c.response_time)}</span>` : ''}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="action-buttons" style="display:flex;gap:4px">
+                                        <button class="action-btn" title="Chatni ko'rish" onclick="App.openChatModal(${c.user_telegram_id}, ${c.group_id}, ${c.id})">👁️</button>
+                                        ${c.status !== 'closed' ? `<button class="action-btn" style="background:var(--success-soft);color:var(--success)" title="Yopish" onclick="App.updateChatStatus(${c.id}, 'closed')">✓</button>` : ''}
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    },
+
+    async updateChatStatus(id, status) {
+        try {
+            await Auth.fetch(`/api/stats/conversations/${id}/status`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status })
+            });
+            this.renderView();
+        } catch (e) {
+            alert("Xatolik: " + e.message);
+        }
+    },
+
     /** ===== TASK MODAL LOGIC ===== */
     openTaskModal(chatId, userId, conversationId, dbGroupId) {
         const modal = document.getElementById('taskModal');
@@ -948,6 +1134,11 @@ const App = {
         } catch (e) {
             alert('Xatolik yuz berdi');
         }
+    },
+
+    setTaskFilter(filter) {
+        this.taskFilter = filter;
+        this.renderView();
     },
 
     /** ===== CONVERSATION HISTORY MODAL ===== */
@@ -1013,6 +1204,15 @@ const App = {
         const minutes = String(date.getMinutes()).padStart(2, '0');
         
         return `${day}.${month}.${year} ${hours}:${minutes}`;
+    },
+
+    formatClock(dateStr) {
+        if (!dateStr) return '';
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return '';
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
     },
 
     formatTime(seconds) {

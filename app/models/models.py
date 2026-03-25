@@ -132,6 +132,10 @@ class Conversation(Base):
     operator_reply_id = Column(BigInteger, nullable=True)
     response_time_seconds = Column(Float, nullable=True)
     is_answered = Column(Boolean, default=False, index=True)
+    status = Column(String(50), default="new", index=True) # new, waiting, answered, closed
+    topic_id = Column(BigInteger, nullable=True, index=True)
+    topic_name = Column(String(255), nullable=True)
+    last_activity_at = Column(DateTime, default=datetime.utcnow, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     answered_at = Column(DateTime, nullable=True)
 
@@ -141,7 +145,7 @@ class Conversation(Base):
     operator = relationship("User", back_populates="conversations_as_operator", foreign_keys=[operator_id])
 
     def __repr__(self):
-        return f"<Conversation(id={self.id}, answered={self.is_answered})>"
+        return f"<Conversation(id={self.id}, status={self.status}, answered={self.is_answered})>"
 
 
 class PredefinedOperator(Base):
@@ -176,6 +180,7 @@ class Task(Base):
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     due_date = Column(DateTime, nullable=True)
+    source_message_id = Column(BigInteger, nullable=True) # Telegram message id
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 

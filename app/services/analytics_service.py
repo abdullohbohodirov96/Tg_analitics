@@ -189,6 +189,31 @@ class AnalyticsService:
         """Sekin javob berilgan suhbatlar"""
         return await self.repo.get_slow_responses(date_from, date_to, group_id=group_id)
 
+    async def update_conversation_status(self, conversation_id: int, status: str) -> Dict:
+        """Suhbat statusini yangilash (manual)"""
+        conv = await self.repo.update_conversation_status(conversation_id, status)
+        if conv:
+            return {"id": conv.id, "status": conv.status}
+        return {"error": "Conversation not found"}
+
+    async def get_conversations(
+        self, status: Optional[str] = None, group_id: Optional[int] = None, limit: int = 50
+    ) -> List[Dict]:
+        """Suhbatlarni status boyicha filtrlash va olish"""
+        # Bu yerda repositorydagi mos metodlarni chaqiramiz
+        if status == "unanswered":
+            return await self.repo.get_unanswered_conversations(group_id=group_id, limit=limit)
+        elif status == "answered":
+            return await self.repo.get_answered_conversations(group_id=group_id, limit=limit)
+        else:
+            # Barchasini olish (combine or new repo method)
+            unanswered = await self.repo.get_unanswered_conversations(group_id=group_id, limit=limit)
+            answered = await self.repo.get_answered_conversations(group_id=group_id, limit=limit)
+            all_convs = unanswered + answered
+            # Activity boyicha sort
+            all_convs.sort(key=lambda x: x.get("last_activity_at", ""), reverse=True)
+            return all_convs[:limit]
+
     # =====================================================
     # MESSAGES
     # =====================================================
@@ -349,6 +374,8 @@ class AnalyticsService:
                         "priority": t.priority or "medium",
                         "user_name": (t.user.full_name if t.user else "Unknown"),
                         "group_title": (t.group.title if t.group else "Unknown"),
+                        "group_telegram_id": str(t.group.telegram_id).replace("-100", "") if (t.group and t.group.telegram_id) else None,
+                        "source_message_id": t.source_message_id,
                         "operator_name": t.assigned_operator.full_name if (t.assigned_operator and t.assigned_operator.full_name) else None,
                         "created_at": t.created_at.isoformat() if t.created_at else datetime.utcnow().isoformat(),
                         "due_date": t.due_date.isoformat() if t.due_date else None

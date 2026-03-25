@@ -1494,3 +1494,106 @@ button {
 .group-settings-btn:hover {
     background: var(--hover-bg, rgba(255,255,255,0.1));
 }
+
+/* ===== TASKS PAGE ENHANCEMENTS ===== */
+.tasks-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+}
+
+.tasks-header .filter-group {
+    display: flex;
+    gap: 8px;
+}
+
+.task-source-link {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 12px;
+    transition: var(--transition);
+}
+
+.task-source-link:hover {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+    transform: scale(1.1);
+}
+
+/* Priority Dots */
+.priority-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+.priority-high .priority-dot { background: var(--danger); }
+.priority-medium .priority-dot { background: var(--warning); }
+.priority-low .priority-dot { background: var(--success); }
+
+/* CRM Chat Status Badges */
+.status-badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.status-new { background: rgba(0, 122, 255, 0.15); color: #007aff; border: 1px solid rgba(0, 122, 255, 0.3); }
+.status-waiting { background: rgba(255, 159, 10, 0.15); color: #ff9f0a; border: 1px solid rgba(255, 159, 10, 0.3); animation: pulse-status 2s infinite; }
+.status-answered { background: rgba(48, 209, 88, 0.15); color: #30d158; border: 1px solid rgba(48, 209, 88, 0.3); }
+.status-closed { background: rgba(142, 142, 147, 0.15); color: #8e8e93; border: 1px solid rgba(142, 142, 147, 0.3); }
+
+@keyframes pulse-status {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+/* Message Timestamps */
+.msg-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--text-muted);
+}
+.msg-operator .msg-meta { justify-content: flex-end; }
+
+/* Conversation List Tags */
+.conv-tags {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+.tag-pill {
+    font-size: 10px;
+    padding: 1px 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+}
+.tag-topic { border-color: var(--accent); color: var(--accent); }
+
+/* Response Time Indicator */
+.response-time-info {
+    font-size: 11px;
+    color: var(--success);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}

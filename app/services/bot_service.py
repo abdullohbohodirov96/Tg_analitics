@@ -80,6 +80,12 @@ class BotService:
             last_name=from_user.get("last_name"),
         )
 
+        # Topic ma'lumotlari
+        topic_id = message.get("message_thread_id")
+        topic_name = None
+        if "forum_topic_created" in message:
+            topic_name = message["forum_topic_created"].get("name")
+
         # Bot command tekshirish
         text = message.get("text", "") or ""
         if text.startswith("/"):
@@ -95,8 +101,6 @@ class BotService:
             reply_to_user = reply_to.get("from", {})
             if reply_to_user and reply_to_user.get("id") != from_user.get("id"):
                 # Boshqa odamga javob berildi
-                reply_to_msg_id = reply_to.get("message_id")
-                
                 # O'sha userning bu guruhdagi barcha javobsiz xabarlarini yopamiz
                 target_user = await self.repo.get_user_by_telegram_id(reply_to_user["id"])
                 if target_user:
@@ -126,6 +130,18 @@ class BotService:
                 )
                 answered_someone = True
 
+        # 3. Stateful Conversation Logic (Phase 7)
+        if not user.is_operator and not answered_someone:
+            # Root message bolsa conversation ochamiz
+            if not reply_to:
+                await self.repo.create_conversation(
+                    group_id=group.id,
+                    user_id=user.id,
+                    user_message_id=message["message_id"],
+                    topic_id=topic_id,
+                    topic_name=topic_name
+                )
+
         # Xabarni saqlash
         msg_date = datetime.utcfromtimestamp(message["date"])
         saved_msg = await self.repo.save_message(
@@ -138,11 +154,57 @@ class BotService:
             is_from_operator=user.is_operator or answered_someone,
         )
 
-        # 3. SMART TASK SUGGESTION (Vazifa taklif qilish)
-        # Agar user xabarida "vazifa", "tashlab bering", "qilib bering", "zakaz" kabi so'zlar bo'lsa
-        task_keywords = ["qilib", "tashlab", "berin", "zakaz", "muammo", "yordam", "kerak", "nechi"]
-        is_potential_task = any(kw in text.lower() for kw in task_keywords) and not user.is_operator
+        # 3. SMART TASK DETECTION (Yaxshilangan tahlil)
+        from app.services.task_classifier import TaskClassifier
+        from app.repositories.task_repository import TaskRepository
         
+        classifier = TaskClassifier()
+        task_repo = TaskRepository(self.db)
+        
+        # A) Avtomatik aniqlash (User so'rovlari)
+        is_task, normalized = classifier.classify(text)
+        if is_task and not user.is_operator:
+            # Takrorlanmasligi uchun tekshirish (ixtiyoriy, lekin maqsadga muvofiq)
+            await task_repo.create_task(
+                title=normalized,
+                description=text,
+                group_id=group.id,
+                user_id=user.id,
+                created_by_id=None,
+                source_message_id=message["message_id"]
+            )
+            print(f"✅ Auto-task created: {normalized}")
+
+        # B) Operator tasdig'i orqali (Affinmation)
+        # "ok", "hop", "qilamiz", "bajaraman", "tashadim", "vazifaga qo'shdim"
+        affirmation_keywords = ["ok", "hop", "qilamiz", "bajaraman", "tashadim", "vazifaga qo'shdim", "добавьте", "сделаем"]
+        is_affirmation = any(kw in text.lower() for kw in affirmation_keywords) and user.is_operator
+        
+        if is_affirmation:
+            # Qaysi userga javob beryapti?
+            target_user_id = None
+            if reply_to:
+                rep_user_tg_id = reply_to.get("from", {}).get("id")
+                rep_user = await self.repo.get_user_by_telegram_id(rep_user_tg_id)
+                if rep_user:
+                    target_user_id = rep_user.id
+            
+            # Oxirgi xabarni topish
+            last_msg = await task_repo.find_last_user_message_in_group(group.id, target_user_id)
+            if last_msg and last_msg.text:
+                # Xabarni vazifa sifatida saqlash
+                # (Agar u avtomatik tushmagan bo'lsa ham tushadi)
+                alt_title = classifier.normalize_task_text(last_msg.text)
+                await task_repo.create_task(
+                    title=alt_title,
+                    description=last_msg.text,
+                    group_id=group.id,
+                    user_id=last_msg.user_id,
+                    created_by_id=user.id, # Operator yaratdi
+                    source_message_id=last_msg.telegram_message_id
+                )
+                print(f"📌 Task created via affirmation: {alt_title}")
+
         # 4. Conversation ochish yoki davom ettirish
         if not answered_someone and not user.is_operator:
             # O'zi uchun yangi suhbat ochish (agar hali ochilmagan bo'lsa)
@@ -156,11 +218,6 @@ class BotService:
                     user_id=user.id,
                     user_message_id=message["message_id"],
                 )
-            
-            # Agar bu potentsial vazifa bo'lsa - Dashboardda buni ko'rsatamiz (modal orqali)
-            # Hozircha shunchaki log qilamiz, UI da "Task Suggestion" sifatida ko'rinadi
-            if is_potential_task:
-                print(f"📌 Task suggested for user {user.id} in group {group.id}: {text[:50]}...")
 
 
     async def _handle_my_chat_member(self, chat_member_update: Dict[str, Any]):
