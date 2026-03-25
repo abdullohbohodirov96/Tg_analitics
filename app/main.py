@@ -30,26 +30,54 @@ async def lifespan(app: FastAPI):
     Startup: jadvallar yaratish, default admin yaratish.
     Shutdown: resurslarni tozalash.
     """
+    import asyncio
+    
     # Startup
     print("🚀 Ilova ishga tushmoqda...")
+    print(f"📦 DATABASE_URL: {settings.async_database_url[:30]}...")
 
     # Jadvallarni yaratish
-    await create_tables()
-    print("✅ Database jadvallar tayyor")
+    try:
+        await create_tables()
+        print("✅ Database jadvallar tayyor")
+    except Exception as e:
+        print(f"❌ Jadvallar yaratishda xato: {e}")
+        raise
+
+    # Biroz kutish — jadvallar to'liq yaratilganini ta'minlash
+    await asyncio.sleep(1)
 
     # Default admin yaratish (agar mavjud bo'lmasa)
-    async with async_session() as db:
-        repo = StatsRepository(db)
-        admin = await repo.get_admin_by_username(settings.ADMIN_USERNAME)
-        if not admin:
-            await repo.create_admin(
-                username=settings.ADMIN_USERNAME,
-                password_hash=hash_password(settings.ADMIN_PASSWORD),
-            )
-            await db.commit()
-            print(f"✅ Admin yaratildi: {settings.ADMIN_USERNAME}")
-        else:
-            print(f"ℹ️ Admin mavjud: {settings.ADMIN_USERNAME}")
+    try:
+        async with async_session() as db:
+            repo = StatsRepository(db)
+            admin = await repo.get_admin_by_username(settings.ADMIN_USERNAME)
+            if not admin:
+                await repo.create_admin(
+                    username=settings.ADMIN_USERNAME,
+                    password_hash=hash_password(settings.ADMIN_PASSWORD),
+                )
+                await db.commit()
+                print(f"✅ Admin yaratildi: {settings.ADMIN_USERNAME}")
+            else:
+                print(f"ℹ️ Admin mavjud: {settings.ADMIN_USERNAME}")
+    except Exception as e:
+        print(f"⚠️ Admin yaratishda xato (keyinroq qayta urinib ko'riladi): {e}")
+        # Admin yaratish crash qilsa ham, ilova ishlashni davom ettirsin
+        try:
+            await asyncio.sleep(2)
+            async with async_session() as db:
+                repo = StatsRepository(db)
+                admin = await repo.get_admin_by_username(settings.ADMIN_USERNAME)
+                if not admin:
+                    await repo.create_admin(
+                        username=settings.ADMIN_USERNAME,
+                        password_hash=hash_password(settings.ADMIN_PASSWORD),
+                    )
+                    await db.commit()
+                    print(f"✅ Admin yaratildi (2-urinish): {settings.ADMIN_USERNAME}")
+        except Exception as e2:
+            print(f"❌ Admin yaratish 2-urinish ham xato: {e2}")
 
     print("✅ Ilova tayyor!")
     yield
