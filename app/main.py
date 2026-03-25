@@ -137,18 +137,29 @@ async def health():
     """Health check endpoint with DB verification"""
     db_status = "unknown"
     tables_count = 0
+    registered_tables = list(Base.metadata.tables.keys())
+    admin_exists = False
+    
     try:
         from sqlalchemy import text
         async with async_session() as db:
             result = await db.execute(text("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'"))
             tables_count = result.scalar()
             db_status = "connected"
+            
+            # Check for admin
+            from app.repositories.stats_repository import StatsRepository
+            repo = StatsRepository(db)
+            admin = await repo.get_admin_by_username(settings.ADMIN_USERNAME)
+            admin_exists = admin is not None
     except Exception as e:
         db_status = f"error: {str(e)}"
 
     return {
         "status": "ok",
         "database": db_status,
-        "tables_found": tables_count,
+        "tables_in_db": tables_count,
+        "tables_in_metadata": registered_tables,
+        "admin_exists": admin_exists,
         "environment": os.getenv("RENDER", "local")
     }
