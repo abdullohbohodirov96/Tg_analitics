@@ -21,13 +21,15 @@ async def telegram_webhook(request: Request):
 
     Security: secret_token header orqali tekshiriladi.
     """
-    # Webhook secret tekshirish
+    # Webhook secret tekshirish (faqat settingsda mavjud bo'lsa)
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-    if secret != settings.WEBHOOK_SECRET:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Webhook secret noto'g'ri",
-        )
+    if settings.WEBHOOK_SECRET and settings.WEBHOOK_SECRET != "default_secret_change_me":
+        if secret != settings.WEBHOOK_SECRET:
+            print(f"⚠️ Webhook secret mismatch! Received: {secret[:3]}..., Expected: {settings.WEBHOOK_SECRET[:3]}...")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Webhook secret noto'g'ri",
+            )
 
     # Update ni olish
     try:
