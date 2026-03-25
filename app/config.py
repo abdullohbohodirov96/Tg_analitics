@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """Asosiy sozlamalar - .env faylidan o'qiladi"""
 
     # Telegram Bot
-    BOT_TOKEN: str = ""
+    BOT_TOKEN: str = "8530283753:AAG78Sc-ICxQy3qJ6H1LUgorjLtlqIupJO8"
     WEBHOOK_SECRET: str = "tg_analytics_webhook_secret_2024"
     OPERATOR_USERNAMES: str = ""  # vergul bilan ajratilgan: admin,manager,operator
 
