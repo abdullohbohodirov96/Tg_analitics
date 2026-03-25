@@ -8,7 +8,7 @@ from sqlalchemy import select, func, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.models.models import Task, User, Group, Conversation
+from app.models.models import Task, User, Group, Conversation, Message
 
 
 class TaskRepository:
